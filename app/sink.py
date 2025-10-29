@@ -46,6 +46,7 @@ def load_config() -> dict:
         "QOS":              1,
         "ROOT_DIR":         "./mqtt_store",
         "FLUSH_EVERY_ROWS": 200,
+        "INACT_TIMEOUT_SEC": 5,  # 会话空闲超时（秒），超过则新文件
         # JSON 字段映射（可在 config.ini 覆盖）
         "F_DN":      "dn",         # 设备号（int/hex str/bytes/数组均可）
         "F_SN":      "sn",         # 压力点数量（可缺省）
@@ -71,6 +72,7 @@ def load_config() -> dict:
         if cp.has_section("store"):
             cfg["ROOT_DIR"]         = cp.get("store","root_dir",    fallback=cfg["ROOT_DIR"])
             cfg["FLUSH_EVERY_ROWS"] = cp.getint("store","flush_every_rows", fallback=cfg["FLUSH_EVERY_ROWS"])
+            cfg["INACT_TIMEOUT_SEC"] = cp.getint("store", "inact_timeout_sec", fallback=cfg["INACT_TIMEOUT_SEC"])
         if cp.has_section("json"):
             for k in ["F_DN","F_SN","F_TS","F_TSMS","F_PRESS","F_MAG","F_GYRO","F_ACC","TS_UNIT"]:
                 if cp.has_option("json", k.lower()):
@@ -134,26 +136,72 @@ class CsvHandle:
         if self.f: self.f.flush(); self.f.close(); self.f=None; self.writer=None
 
 class StoreManager:
-    def __init__(self, root_dir, flush_every_rows):
+    def __init__(self, root_dir, flush_every_rows, inactivity_timeout_sec: int = 5):
         self.root = pathlib.Path(root_dir)
         self.flush_every_rows = flush_every_rows
-        self.handles: Dict[Tuple[str,str], CsvHandle] = {}
+        self.inactivity_timeout_sec = inactivity_timeout_sec
+        # 按 DN 维护当前会话：dn_hex -> {"day": "YYYYMMDD", "handle": CsvHandle, "last_seen": datetime, "sn": int}
+        self.sessions: Dict[str, Dict[str, object]] = {}
 
-    def get_handle(self, dn_hex: str, sn: int, day: str) -> CsvHandle:
-        key = (dn_hex, day)
-        if key not in self.handles:
-            path = self.root / dn_hex / day / "data.csv"
-            self.handles[key] = CsvHandle(path, sn, dn_hex)
-        return self.handles[key]
+    def _new_handle_path(self, dn_hex: str, when: datetime) -> pathlib.Path:
+        day = when.strftime("%Y%m%d")
+        now_str = when.strftime("%H%M%S")  # 文件名按时分秒
+        return self.root / dn_hex / day / f"{now_str}.csv"
+
+    def _open_new_session(self, dn_hex: str, sn: int, when: datetime):
+        # 关闭旧句柄（若有）
+        s = self.sessions.get(dn_hex)
+        if s and s.get("handle"):
+            try: s["handle"].close()
+            except Exception: pass
+
+        path = self._new_handle_path(dn_hex, when)
+        h = CsvHandle(path, sn, dn_hex)
+        self.sessions[dn_hex] = {
+            "day": when.strftime("%Y%m%d"),
+            "handle": h,
+            "last_seen": when,
+            "sn": int(sn),
+        }
+        return h
+
+    def _get_handle_for_write(self, dn_hex: str, sn: int, when: datetime) -> CsvHandle:
+        day = when.strftime("%Y%m%d")
+        s = self.sessions.get(dn_hex)
+
+        if s is None:
+            return self._open_new_session(dn_hex, sn, when)
+
+        # 跨天则强制新文件
+        if s["day"] != day:
+            return self._open_new_session(dn_hex, sn, when)
+
+        # 会话空闲超时则新文件（视为新实验）
+        last_seen: datetime = s["last_seen"]
+        idle = (when - last_seen).total_seconds()
+        if idle >= self.inactivity_timeout_sec:
+            return self._open_new_session(dn_hex, sn, when)
+
+        # SN 如变化，以新 SN 为准开新文件（避免列数不一致）
+        if int(s["sn"]) != int(sn):
+            return self._open_new_session(dn_hex, sn, when)
+
+        return s["handle"]
 
     def write(self, dn_hex: str, sn: int, ts: float, pressures, mag, gyro, acc, when: datetime):
-        day = when.strftime("%Y%m%d")
-        h = self.get_handle(dn_hex, sn, day)
+        h = self._get_handle_for_write(dn_hex, sn, when)
         h.write_row(ts, pressures, mag, gyro, acc, self.flush_every_rows)
+        # 更新 last_seen
+        sess = self.sessions[dn_hex]
+        sess["last_seen"] = when
 
     def close_all(self):
-        for h in self.handles.values(): h.close()
-        self.handles.clear()
+        for s in self.sessions.values():
+            h = s.get("handle")
+            if h: 
+                try: h.close()
+                except Exception: pass
+        self.sessions.clear()
 
 # ========== JSON 解析 ==========
 def parse_json_payload(b: bytes, cfg: dict):
@@ -203,7 +251,7 @@ class MqttSink:
         self.client = mqtt.Client(client_id=cfg["CLIENT_ID"], clean_session=True)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
-        self.store = StoreManager(cfg["ROOT_DIR"], cfg["FLUSH_EVERY_ROWS"])
+        self.store = StoreManager(cfg["ROOT_DIR"], cfg["FLUSH_EVERY_ROWS"], cfg.get("INACT_TIMEOUT_SEC", 5))
         self._running = True
         self._rx = 0
         self._last_stat = time.time()

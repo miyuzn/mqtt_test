@@ -8,3 +8,6 @@ __pycache__/
 # Docker volumes (logs/data if you don't want to commit)
 mosquitto/data/
 mosquitto/log/
+
+# sink data
+app/mqtt_store/
