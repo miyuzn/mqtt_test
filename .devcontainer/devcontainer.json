@@ -1,0 +1,28 @@
+{
+  "name": "mqtt-py-dev",
+  "build": {
+    "dockerfile": "app/Dockerfile",
+    "context": "."
+  },
+  "workspaceFolder": "/app",
+  "workspaceMount": "source=${localWorkspaceFolder}/app,target=/app,type=bind",
+  "runArgs": [
+    "--network", "${localWorkspaceFolderBasename}_default"
+  ],
+  "containerEnv": {
+    "BROKER_HOST": "mosquitto",
+    "BROKER_PORT": "1883",
+    "SUB_TOPICS": "demo/#",
+    "PUB_TOPIC": "demo/hello"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-azuretools.vscode-docker",
+        "ms-vscode-remote.remote-containers"
+      ]
+    }
+  },
+  "postCreateCommand": "python -c \"print('Dev container ready')\""
+}

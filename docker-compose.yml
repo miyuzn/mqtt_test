@@ -1,0 +1,36 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT TCP
+      - "9001:9001"   # MQTT over WebSocket（可选）
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+
+  mqttcli:
+    image: efrecon/mqtt-client
+    container_name: mqtt-cli
+    depends_on:
+      - mosquitto
+
+  pyclient:
+    build: ./app
+    container_name: mqtt-pyclient
+    depends_on:
+      - mosquitto
+    environment:
+      # 与 Broker 同网段，直接用服务名 mosquitto
+      - BROKER_HOST=mosquitto
+      - BROKER_PORT=1883
+      # 示例主题
+      - SUB_TOPICS=demo/#,secure/#
+      - PUB_TOPIC=demo/hello
+      - USERNAME=
+      - PASSWORD=
+    volumes:
+      - ./app:/app   # 热更新代码
+    command: ["sleep", "infinity"]  # 保持容器常驻，便于 VS Code 附加调试

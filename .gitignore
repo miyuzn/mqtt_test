@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
+
+# Docker volumes (logs/data if you don't want to commit)
+mosquitto/data/
+mosquitto/log/
