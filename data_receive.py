@@ -1,6 +1,7 @@
 # data_receive.py — UDP→(可选原始|解析后)→MQTT
 import os
 import sys
+import configparser
 import socket
 import signal
 import threading
@@ -15,38 +16,66 @@ import paho.mqtt.client as mqtt
 import sensor2  # 确保与同目录的 sensor2.py 同名
 
 # ======================
-# 配置（可用环境变量覆盖）
+# 配置（从 config.ini 读取，环境变量可覆盖）
 # ======================
-UDP_LISTEN_PORT = int(os.getenv("UDP_LISTEN_PORT", "13250"))
-UDP_COPY_LOCAL  = os.getenv("UDP_COPY_LOCAL", "0") == "1"   # 是否继续复制到本机UDP 53000（兼容旧工具）
-LOCAL_FWD_IP    = os.getenv("LOCAL_FWD_IP", "127.0.0.1")
-LOCAL_FWD_PORT  = int(os.getenv("LOCAL_FWD_PORT", "53000"))
+import uuid, re, configparser
 
-BROKER_HOST     = os.getenv("MQTT_BROKER_HOST", "127.0.0.1")
-BROKER_PORT     = int(os.getenv("MQTT_BROKER_PORT", "1883"))
-DEVICE_ID       = os.getenv("DEVICE_ID", "R25")
-CLIENT_ID       = os.getenv("CLIENT_ID", f"udp-bridge-{DEVICE_ID}")
+CONFIG_PATH = os.getenv("CONFIG_PATH", "config.ini")
 
-# 主题：原始与解析后
-TOPIC_RAW       = os.getenv("MQTT_TOPIC_RAW",    f"etx/v1/raw/{DEVICE_ID}")
-TOPIC_PARSED_PR = os.getenv("MQTT_TOPIC_PARSED_PREFIX", "etx/v1/parsed")  # 实际发布到 etx/v1/parsed/<DNHEX>
+config = configparser.ConfigParser()
+config.read(CONFIG_PATH, encoding="utf-8")
 
-# 发布选项
-PUBLISH_RAW     = os.getenv("PUBLISH_RAW", "0") == "1"   # 是否保留原始字节发布
-PUBLISH_PARSED  = os.getenv("PUBLISH_PARSED", "1") == "1"
-MQTT_QOS        = int(os.getenv("MQTT_QOS", "1"))
+def _sanitize(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]", "-", s)[:64] if isinstance(s, str) else "auto"
 
-# 队列与批量参数（与旧版一致）
-Q_MAXSIZE       = int(os.getenv("BRIDGE_QUEUE_SIZE", "2000"))   # 有界队列，防止内存增长
-DROP_POLICY     = os.getenv("DROP_POLICY", "drop_oldest")       # drop_oldest / drop_new
-BATCH_MAX_ITEMS = int(os.getenv("BATCH_MAX_ITEMS", "50"))       # 原始聚合条目上限（仅对原始字节路径有效）
-BATCH_MAX_MS    = int(os.getenv("BATCH_MAX_MS", "40"))          # 原始聚合时间窗(ms)
-BATCH_SEPARATOR = os.getenv("BATCH_SEPARATOR", "NONE")          # NONE / NL
-PRINT_EVERY_MS  = int(os.getenv("PRINT_EVERY_MS", "2000"))      # 状态打印周期
+def _short_mac() -> str:
+    try:
+        return f"{(uuid.getnode() & 0xFFFFFF):06X}"
+    except Exception:
+        return "000000"
 
-# UDP接收参数
-UDP_BUF_BYTES   = int(os.getenv("UDP_BUF_BYTES", "8192"))       # 每次接收的最大字节
-SO_RCVBUF_BYTES = int(os.getenv("SO_RCVBUF_BYTES", "4_194_304".replace('_','')))  # 4MB接收缓冲
+def get_conf(section, key, default=None, cast=str):
+    """优先 环境变量(section_key 大写) > config.ini > default"""
+    env_key = f"{section}_{key}".upper()
+    val = os.getenv(env_key)
+    if val is None:
+        try:
+            val = config.get(section, key)
+            if val == "" and default is not None:
+                val = default
+        except Exception:
+            val = default
+    try:
+        return cast(val) if cast else val
+    except Exception:
+        return val
+
+# UDP
+UDP_LISTEN_PORT = get_conf("UDP", "LISTEN_PORT", 13250, int)
+UDP_COPY_LOCAL  = get_conf("UDP", "COPY_LOCAL", 0, int) == 1
+LOCAL_FWD_IP    = get_conf("UDP", "LOCAL_FWD_IP", "127.0.0.1")
+LOCAL_FWD_PORT  = get_conf("UDP", "LOCAL_FWD_PORT", 53000, int)
+UDP_BUF_BYTES   = get_conf("UDP", "BUF_BYTES", 8192, int)
+SO_RCVBUF_BYTES = get_conf("UDP", "SO_RCVBUF_BYTES", 4194304, int)
+
+# MQTT（不再使用 DEVICE_ID；CLIENT_ID 可自动生成）
+_default_client_id = f"udp-bridge-{_sanitize(socket.gethostname())}-{_short_mac()}"
+BROKER_HOST     = get_conf("MQTT", "BROKER_HOST", "127.0.0.1")
+BROKER_PORT     = get_conf("MQTT", "BROKER_PORT", 1883, int)
+CLIENT_ID       = get_conf("MQTT", "CLIENT_ID", _default_client_id)
+TOPIC_RAW       = get_conf("MQTT", "TOPIC_RAW", "etx/v1/raw")
+TOPIC_PARSED_PR = get_conf("MQTT", "TOPIC_PARSED_PREFIX", "etx/v1/parsed")
+PUBLISH_RAW     = get_conf("MQTT", "PUBLISH_RAW", 0, int) == 1
+PUBLISH_PARSED  = get_conf("MQTT", "PUBLISH_PARSED", 1, int) == 1
+MQTT_QOS        = get_conf("MQTT", "MQTT_QOS", 1, int)
+
+# QUEUE
+Q_MAXSIZE       = get_conf("QUEUE", "BRIDGE_QUEUE_SIZE", 2000, int)
+DROP_POLICY     = get_conf("QUEUE", "DROP_POLICY", "drop_oldest")
+BATCH_MAX_ITEMS = get_conf("QUEUE", "BATCH_MAX_ITEMS", 50, int)
+BATCH_MAX_MS    = get_conf("QUEUE", "BATCH_MAX_MS", 40, int)
+BATCH_SEPARATOR = get_conf("QUEUE", "BATCH_SEPARATOR", "NONE")
+PRINT_EVERY_MS  = get_conf("QUEUE", "PRINT_EVERY_MS", 2000, int)
 
 running = True
 pkt_in = 0
