@@ -13,7 +13,7 @@ import paho.mqtt.client as mqtt
 
 # ===== 新增：引入新版解析库 =====
 # 解析逻辑与字段布局参考 sensor2.parse_sensor_data（DN=6字节，SN=压力通道数，Mag/Gyro/Acc为3f）【见 sensor2.py】
-import sensor2  # 确保与同目录的 sensor2.py 同名
+import app.sensor2 as sensor2  # 确保与同目录的 sensor2.py 同名
 
 # ======================
 # 配置（从 config.ini 读取，环境变量可覆盖）
