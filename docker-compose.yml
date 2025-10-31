@@ -33,4 +33,4 @@ services:
       - PASSWORD=
     volumes:
       - ./app:/app   # 热更新代码
-    command: ["sleep", "infinity"]  # 保持容器常驻，便于 VS Code 附加调试
+    command: ["python", "sink.py"]  # 自启动落盘程序
