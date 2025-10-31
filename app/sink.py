@@ -42,6 +42,7 @@ def load_config() -> dict:
         "MQTT_BROKER_HOST": "127.0.0.1",
         "MQTT_BROKER_PORT": 1883,
         "MQTT_SUB_TOPIC":   "etx/v1/raw/+",
+        
         "CLIENT_ID":        "mqtt-sink-store-json",
         "QOS":              1,
         "ROOT_DIR":         "./mqtt_store",

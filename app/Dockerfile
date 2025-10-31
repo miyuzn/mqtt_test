@@ -15,3 +15,4 @@ COPY . .
 # 开发期让 compose 用 sleep infinity 保持容器存活
 # 如需直接启动订阅者，可改为：
 # CMD ["python", "main_subscriber.py"]
+CMD ["python", "sink.py"]
