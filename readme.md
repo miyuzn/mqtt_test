@@ -9,8 +9,8 @@
 
 ### 1️⃣ 克隆项目仓库
 ```bash
-git clone https://github.com/<YourUsername>/<YourRepoName>.git
-cd <YourRepoName>
+git clone https://github.com/miyuzn/mqtt_test.git
+cd mqtt_test
 ```
 
 > 💡 若你已获取压缩包，可直接解压后进入项目目录。
@@ -21,7 +21,6 @@ cd <YourRepoName>
 请确保本机已正确安装以下组件：
 
 - [Docker Engine / Docker Desktop](https://www.docker.com/get-started/)
-- [Docker Compose v2+](https://docs.docker.com/compose/)
 
 测试命令：
 ```bash
@@ -126,6 +125,5 @@ mosquitto_sub -h localhost -t "etx/v1/parsed/#" -v
 
 ## 📄 License
 
-This project is released under the MIT License.  
-© 2025 [Your Name or Organization]. All rights reserved.
+© 2025 iSensing Lab. All rights reserved.
 
