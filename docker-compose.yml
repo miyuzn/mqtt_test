@@ -34,3 +34,27 @@ services:
     volumes:
       - ./app:/app   # 热更新代码
     command: ["python", "sink.py"]  # 自启动落盘程序
+
+  bridge:
+    build: ./app
+    container_name: mqtt-bridge
+    depends_on:
+      - mosquitto
+    environment:
+      - BROKER_HOST=mosquitto
+      - BROKER_PORT=1883
+      - MQTT_SUB_TOPIC=etx/v1/parsed/#
+      - MQTT_QOS=1
+      - CLIENT_ID=mqtt-bridge
+      - BRIDGE_PORT=5001
+    volumes:
+      - ./app:/app
+      - ./server:/server
+    command: ["python", "/server/bridge.py"]
+    ports:
+      - "5001:5001"
+    networks:
+      default:
+        aliases:
+          - bridge
+          - module5-bridge
