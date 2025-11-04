@@ -10,4 +10,4 @@ mosquitto/data/
 mosquitto/log/
 
 # sink data
-# app/mqtt_store/
+app/mqtt_store/
