@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>实时压力监控面板</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      integrity="sha384-gpwM70fZr2CsdUkNZp6+AnmLkPCFBLdLHg57AyTV+pUIR0+IuPbi57fCB3Rp3Xx8"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-lbP8Wd2bacf4rxi6Kag4lo1io8G2HrVLtjQJ592RS30IxPxBh/SzvxVwk0Dhdxhq" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.3.0/build/global/luxon.min.js" integrity="sha384-QUpAJZciV06P88eaJEqn3Ejj6inUeJ8V+RaHcRUW2KIiMzFxLpy0X58F3RDeo63A" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js" integrity="sha384-M/JG1CEV4VpWw2X2g/9nRvYG23P9ieJ7TOHuAFD+a83H3fvItVtJ91P76aT+EqXR" crossorigin="anonymous"></script>
+  </head>
+  <body>
+    <div class="container py-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <h1 class="h3 mb-1">实时压力监控面板</h1>
+          <p class="text-muted mb-0">
+            数据来源：<code>{{ bridge_api_base }}</code>
+          </p>
+        </div>
+        <div class="text-end">
+          <div class="badge bg-secondary" id="status-indicator">连接中...</div>
+          <div class="small text-muted" id="last-update">--</div>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">总压力趋势</h2>
+              <canvas id="pressureChart" height="220"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-4">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">当前概览</h2>
+              <div class="mb-3">
+                <div class="fw-semibold">活跃设备</div>
+                <div class="display-6" id="active-devices">0</div>
+              </div>
+              <div>
+                <div class="fw-semibold">总压力</div>
+                <div class="display-6" id="total-pressure">0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mt-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 mb-0">设备详情</h2>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="autoScroll" checked />
+              <label class="form-check-label" for="autoScroll">新数据时自动滚动</label>
+            </div>
+          </div>
+          <div class="table-responsive" style="max-height: 360px;">
+            <table class="table table-striped align-middle" id="device-table">
+              <thead class="table-light sticky-top">
+                <tr>
+                  <th scope="col">DN</th>
+                  <th scope="col">压力传感器数</th>
+                  <th scope="col">压力总和</th>
+                  <th scope="col">最新帧时间</th>
+                  <th scope="col">接收时间</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const SNAPSHOT_ENDPOINT = "{{ url_for('proxy_latest') }}";
+      const STREAM_ENDPOINT = "{{ url_for('proxy_stream') }}";
+
+      const state = new Map();
+      const historyLimit = 60;
+      const colors = [
+        "#4c6ef5",
+        "#ff922b",
+        "#f03e3e",
+        "#12b886",
+        "#ae3ec9",
+        "#fab005",
+        "#1098ad",
+        "#e64980"
+      ];
+
+      const chart = new Chart(document.getElementById("pressureChart"), {
+        type: "line",
+        data: {
+          datasets: []
+        },
+        options: {
+          responsive: true,
+          animation: false,
+          interaction: {
+            intersect: false,
+            mode: "nearest"
+          },
+          scales: {
+            x: {
+              type: "time",
+              time: {
+                tooltipFormat: "HH:mm:ss",
+                displayFormats: {
+                  second: "HH:mm:ss"
+                }
+              },
+              ticks: {
+                autoSkip: true,
+                maxTicksLimit: 10
+              }
+            },
+            y: {
+              title: {
+                display: true,
+                text: "压力总和"
+              }
+            }
+          },
+          plugins: {
+            legend: {
+              display: true,
+              position: "bottom"
+            }
+          }
+        }
+      });
+
+      function ensureDataset(dn) {
+        let ds = chart.data.datasets.find((d) => d.label === dn);
+        if (!ds) {
+          const color = colors[chart.data.datasets.length % colors.length];
+          ds = {
+            label: dn,
+            data: [],
+            borderColor: color,
+            backgroundColor: color + "33",
+            tension: 0.25,
+            spanGaps: true
+          };
+          chart.data.datasets.push(ds);
+        }
+        return ds;
+      }
+
+      function addHistoryPoint(dn, timestamp, sum) {
+        if (!Number.isFinite(sum)) {
+          return;
+        }
+        const ds = ensureDataset(dn);
+        ds.data.push({ x: timestamp, y: sum });
+        if (ds.data.length > historyLimit) {
+          ds.data.splice(0, ds.data.length - historyLimit);
+        }
+        chart.update("none");
+      }
+
+      function updateSummary() {
+        const devices = state.size;
+        let total = 0;
+        for (const entry of state.values()) {
+          total += entry.pressureSum ?? 0;
+        }
+        document.getElementById("active-devices").textContent = devices;
+        document.getElementById("total-pressure").textContent = total.toFixed(2);
+      }
+
+     function updateTable() {
+        const tbody = document.querySelector("#device-table tbody");
+        const autoScroll = document.getElementById("autoScroll").checked;
+        const rows = Array.from(state.values()).sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0));
+        tbody.innerHTML = "";
+        for (const entry of rows) {
+          const tr = document.createElement("tr");
+          const pressureText = Number.isFinite(entry.pressureSum) ? entry.pressureSum.toFixed(2) : "--";
+          tr.innerHTML = `
+            <td><code>${entry.dn}</code></td>
+            <td>${entry.sensorCount ?? "--"}</td>
+            <td>${pressureText}</td>
+            <td>${entry.frameTime ? new Date(entry.frameTime).toLocaleString() : "--"}</td>
+            <td>${entry.receivedAt ? new Date(entry.receivedAt).toLocaleString() : "--"}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+        if (autoScroll) {
+          tbody.parentElement.scrollTop = 0;
+        }
+      }
+
+      function normalizeEntry(entry) {
+        if (!entry || typeof entry !== "object") {
+          return null;
+        }
+        const dn = entry.dn || "UNKNOWN";
+        const payload = entry.payload || {};
+        let pressureSum = null;
+        let sensorCount = null;
+        let frameTime = null;
+        if (payload && typeof payload === "object") {
+          const pressures = Array.isArray(payload.p) ? payload.p : [];
+          sensorCount = payload.sn ?? pressures.length;
+          pressureSum = pressures.reduce((acc, value) => acc + Number(value || 0), 0);
+          if (payload.ts) {
+            frameTime = payload.ts * 1000;
+          }
+        }
+        const receivedAt = entry.received_at ? Date.parse(entry.received_at) : Date.now();
+        return {
+          dn,
+          pressureSum,
+          sensorCount,
+          frameTime,
+          receivedAt,
+          raw: entry
+        };
+      }
+
+      function applyEntry(entry) {
+        const normalized = normalizeEntry(entry);
+        if (!normalized) return;
+        state.set(normalized.dn, normalized);
+        addHistoryPoint(normalized.dn, normalized.receivedAt, normalized.pressureSum ?? NaN);
+        updateSummary();
+        updateTable();
+        const lastUpdate = document.getElementById("last-update");
+        lastUpdate.textContent = new Date().toLocaleString();
+      }
+
+      async function fetchSnapshot() {
+        try {
+          const resp = await fetch(SNAPSHOT_ENDPOINT);
+          const data = await resp.json();
+          if (Array.isArray(data.data)) {
+            data.data.forEach(applyEntry);
+          }
+          document.getElementById("status-indicator").textContent = "已连接";
+          document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-danger");
+          document.getElementById("status-indicator").classList.add("bg-success");
+        } catch (err) {
+          document.getElementById("status-indicator").textContent = "桥接不可达";
+          document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-success");
+          document.getElementById("status-indicator").classList.add("bg-danger");
+          console.error("无法获取快照", err);
+        }
+      }
+
+      function subscribeStream() {
+        const source = new EventSource(STREAM_ENDPOINT);
+        source.addEventListener("snapshot", (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (Array.isArray(payload.data)) {
+              payload.data.forEach(applyEntry);
+            }
+          } catch (err) {
+            console.error("解析 snapshot 数据失败", err);
+          }
+        });
+        source.addEventListener("update", (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            applyEntry(payload);
+          } catch (err) {
+            console.error("解析 update 数据失败", err);
+          }
+        });
+        source.addEventListener("error", (event) => {
+          document.getElementById("status-indicator").textContent = "实时连接中断";
+          document.getElementById("status-indicator").classList.remove("bg-success");
+          document.getElementById("status-indicator").classList.add("bg-warning");
+        });
+        source.onopen = () => {
+          document.getElementById("status-indicator").textContent = "实时连接正常";
+          document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-danger", "bg-warning");
+          document.getElementById("status-indicator").classList.add("bg-success");
+        };
+      }
+
+      fetchSnapshot();
+      subscribeStream();
+    </script>
+  </body>
+</html>

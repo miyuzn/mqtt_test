@@ -1,0 +1,15 @@
+body {
+  background-color: #f8f9fb;
+}
+
+.card {
+  border: none;
+}
+
+.table-responsive {
+  overflow-y: auto;
+}
+
+code {
+  font-size: 0.9rem;
+}

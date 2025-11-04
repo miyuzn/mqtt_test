@@ -1,0 +1,8 @@
+body {
+  min-height: 100vh;
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+}

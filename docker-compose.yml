@@ -58,3 +58,18 @@ services:
         aliases:
           - bridge
           - module5-bridge
+
+  web:
+    build: ./webapp
+    container_name: mqtt-web
+    depends_on:
+      - bridge
+    environment:
+      - BRIDGE_API_BASE_URL=http://bridge:5001
+      - BRIDGE_CONNECT_TIMEOUT=5
+      - BRIDGE_READ_TIMEOUT=30
+    volumes:
+      - ./webapp:/app
+    ports:
+      - "5000:5000"
+    restart: unless-stopped

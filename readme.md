@@ -40,15 +40,24 @@ docker compose up -d
 ```
 
 Compose 将自动：
-- 拉取所需镜像（官方 `eclipse-mosquitto` 与 `miyuzn/mqtt_test-pyclient:latest`）；
+- 拉取所需镜像（官方 `eclipse-mosquitto` + 自建镜像 `app/`、`webapp/`）；
 - 启动 MQTT Broker；
-- 启动 Python Client（自动执行 `sink.py`）；
-- 按配置文件连接内部网络。
+- 启动 Python Client（自动执行 `sink.py` 完成落盘）；
+- 启动 MQTT → Web 桥接服务（`server/bridge.py`）；
+- 启动 Web 前端（`webapp/`，展示实时压力数据）。
 
 启动完成后可查看运行状态：
 ```bash
 docker ps
 ```
+
+### 4️⃣ 访问实时监控仪表盘
+
+Web 服务会同步订阅 MQTT 数据，并通过 Socket.IO 将压力数据推送至浏览器。默认访问地址：
+
+- http://localhost:5000
+
+若修改了 `MQTT_TOPIC` 或 Broker 地址，可在 `docker-compose.yml` 的 `web` 服务环境变量中调整。
 
 ---
 
@@ -75,17 +84,23 @@ TOPIC_PARSED_PREFIX = etx/v1/parsed
 ```text
 .
 ├── app/
-│   ├── mqtt_store/                     # 接收到的数据
-│   │   └── <device:Mac address>/       # 同一device接收到的数据
-│   │        └── <date>/                # 同一天接收到的数据
-│   │             └── <hhmmss>.csv      # 单次实验接收到的数据
-│   ├── sensor2.py                      # 传感器数据类
-│   ├── sink.py                         # MQTT接收方脚本
-│   └── config.ini                      # MQTT接收方配置文件
-├── docker-compose.yml                  # 一键部署docker配置脚本
-├── config.ini                          # MQTT发送方配置文件
-├── data_receive.py                     # MQTT发送方脚本
-└── README.md                           # 项目说明
+│   ├── Dockerfile
+│   ├── requirements.txt                # Python 客户端依赖（含 bridge 依赖）
+│   ├── sink.py                         # 模块4：MQTT 落盘
+│   ├── sensor2.py                      # 数据解析逻辑
+│   └── mqtt_store/                     # CSV 数据存储
+├── server/
+│   └── bridge.py                       # 模块3/4：MQTT → Web 实时桥接
+├── webapp/
+│   ├── Dockerfile
+│   ├── app.py                          # 模块5：Flask Web 可视化
+│   ├── requirements.txt
+│   ├── templates/index.html            # 可视化界面
+│   └── static/styles.css
+├── docker-compose.yml                  # 一键部署 docker 配置脚本
+├── config.ini                          # UDP → MQTT 发送端配置
+├── data_receive.py                     # 模块2：UDP→MQTT 桥接
+└── README.md
 ```
 
 ---
@@ -111,15 +126,19 @@ docker compose up -d --build
 
 ## 📡 MQTT 测试
 
-默认 Broker 暴露在本机端口：
+默认服务暴露端口：
 ```
-tcp://localhost:1883
+- MQTT Broker：tcp://localhost:1883
+- MQTT-Web 桥接：http://localhost:5001
+- Web 可视化：http://localhost:5000
 ```
 
-可使用 [MQTTX](https://mqttx.app/) 或命令行工具进行测试：
+可使用 [MQTTX](https://mqttx.app/) 或命令行工具进行测试 MQTT 消息：
 ```bash
 mosquitto_sub -h localhost -t "etx/v1/parsed/#" -v
 ```
+
+在浏览器打开 `http://localhost:5000` 可以看到实时压力仪表板，页面通过 Server-Sent Events 自动刷新。
 
 ---
 
