@@ -1,0 +1,43 @@
+        try:
+            while bridge_service._running.is_set():
+                try:
+                    item = listener.get(timeout=1.0)
+                except queue.Empty:
+                    continue
+                yield _format_sse("update", item)
+        finally:
+            bridge_service.unregister_listener(listener)
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
+
+
+@SOCKETIO.on("connect")
+def handle_socket_connect():
+    emit("snapshot", {"data": list(bridge_service.snapshot())})
+
+
+def install_signals():
+    def _stop(signum, frame):
+        print(f"[bridge] stopping (signal {signum})")
+        bridge_service.stop()
+
+    signal.signal(signal.SIGINT, _stop)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _stop)
+
+
+def main() -> None:
+    print(
+        "[bridge] starting with broker="
+        f"{bridge_config.mqtt_host}:{bridge_config.mqtt_port} topic={bridge_config.mqtt_topic}"
+    )
+    install_signals()
+    bridge_service.start()
+    try:
+        SOCKETIO.run(APP, host="0.0.0.0", port=bridge_config.http_port, allow_unsafe_werkzeug=True)
+    finally:
+        bridge_service.stop()
+
+
+if __name__ == "__main__":
+    main()

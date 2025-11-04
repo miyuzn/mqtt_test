@@ -4,16 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>实时压力监控面板</title>
+
+    <!-- 去掉 integrity / crossorigin -->
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
-      integrity="sha384-gpwM70fZr2CsdUkNZp6+AnmLkPCFBLdLHg57AyTV+pUIR0+IuPbi57fCB3Rp3Xx8"
-      crossorigin="anonymous"
     />
+
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-lbP8Wd2bacf4rxi6Kag4lo1io8G2HrVLtjQJ592RS30IxPxBh/SzvxVwk0Dhdxhq" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/luxon@3.3.0/build/global/luxon.min.js" integrity="sha384-QUpAJZciV06P88eaJEqn3Ejj6inUeJ8V+RaHcRUW2KIiMzFxLpy0X58F3RDeo63A" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js" integrity="sha384-M/JG1CEV4VpWw2X2g/9nRvYG23P9ieJ7TOHuAFD+a83H3fvItVtJ91P76aT+EqXR" crossorigin="anonymous"></script>
   </head>
   <body>
     <div class="container py-4">
@@ -29,7 +27,7 @@
           <div class="small text-muted" id="last-update">--</div>
         </div>
       </div>
-
+  
       <div class="row g-4">
         <div class="col-lg-8">
           <div class="card shadow-sm h-100">
@@ -82,8 +80,15 @@
         </div>
       </div>
     </div>
+    <!-- 先加载库（严格顺序）：Chart.js -> Luxon -> 适配器 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.3.0/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
 
+    <!-- 再加载你的内联逻辑（此处才会用到 Chart / Luxon） -->
     <script>
+      console.log('Chart loaded?', !!window.Chart);   // 应为 true
+      console.log('Luxon loaded?', !!window.luxon);   // 应为 true
       const SNAPSHOT_ENDPOINT = "{{ url_for('proxy_latest') }}";
       const STREAM_ENDPOINT = "{{ url_for('proxy_stream') }}";
 
