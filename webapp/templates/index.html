@@ -90,6 +90,7 @@
                   <th scope="col">压力总和</th>
                   <th scope="col">最新帧时间</th>
                   <th scope="col">接收时间</th>
+                  <th scope="col" class="text-center">操作</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -334,11 +335,27 @@
         document.getElementById("total-pressure").textContent = total.toFixed(2);
       }
 
+      function updateLastUpdateIndicator() {
+        const lastUpdate = document.getElementById("last-update");
+        const latest = Array.from(state.values()).reduce(
+          (max, entry) => Math.max(max, entry.receivedAt || 0),
+          0
+        );
+        lastUpdate.textContent = latest ? new Date(latest).toLocaleString() : "--";
+      }
+
       function updateTable() {
         const tbody = document.querySelector("#device-table tbody");
         const autoScroll = document.getElementById("autoScroll").checked;
         const now = Date.now();
-        const rows = Array.from(state.values()).sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0));
+        const rows = Array.from(state.values()).sort((a, b) => {
+          if (a.dn && b.dn && a.dn.localeCompare) {
+            return a.dn.localeCompare(b.dn, undefined, { numeric: true, sensitivity: "base" });
+          }
+          if (a.dn < b.dn) return -1;
+          if (a.dn > b.dn) return 1;
+          return 0;
+        });
         tbody.innerHTML = "";
         for (const entry of rows) {
           const tr = document.createElement("tr");
@@ -353,12 +370,36 @@
             <td>${pressureText}</td>
             <td>${entry.frameTime ? new Date(entry.frameTime).toLocaleString() : "--"}</td>
             <td>${entry.receivedAt ? new Date(entry.receivedAt).toLocaleString() : "--"}</td>
+            <td class="text-center">
+              <button type="button" class="btn btn-sm btn-outline-danger remove-device" data-dn="${entry.dn}">停止监控</button>
+            </td>
           `;
+          const removeButton = tr.querySelector(".remove-device");
+          if (removeButton) {
+            removeButton.addEventListener("click", (event) => {
+              event.stopPropagation();
+              removeDevice(entry.dn);
+            });
+          }
           tbody.appendChild(tr);
         }
         if (autoScroll) {
           tbody.parentElement.scrollTop = 0;
         }
+      }
+
+      function removeDevice(dn) {
+        if (!state.has(dn)) {
+          return;
+        }
+        state.delete(dn);
+        if (selectedDevice === dn) {
+          selectedDevice = null;
+        }
+        updateSummary();
+        updateTable();
+        updateDeviceOptions();
+        updateLastUpdateIndicator();
       }
 
       function normalizeEntry(entry) {
@@ -414,12 +455,7 @@
         updateSummary();
         updateTable();
         updateDeviceOptions();
-        const lastUpdate = document.getElementById("last-update");
-        const latest = Array.from(state.values()).reduce(
-          (max, entry) => Math.max(max, entry.receivedAt || 0),
-          0
-        );
-        lastUpdate.textContent = latest ? new Date(latest).toLocaleString() : "--";
+        updateLastUpdateIndicator();
       }
 
       async function fetchSnapshot() {
