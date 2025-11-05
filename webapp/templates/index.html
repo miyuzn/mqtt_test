@@ -15,15 +15,20 @@
   </head>
   <body>
     <div class="container py-4">
-      <div class="d-flex justify-content-between align-items-center mb-4">
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
-          <h1 class="h3 mb-1">实时压力监控面板</h1>
+          <h1 class="h3 mb-1" data-i18n="header.title">实时压力监控面板</h1>
           <p class="text-muted mb-0">
-            数据来源：<code>{{ bridge_api_base }}</code>
+            <span data-i18n="header.data_source">数据来源：</span><code>{{ bridge_api_base }}</code>
           </p>
         </div>
-        <div class="text-end">
-          <div class="badge bg-secondary" id="status-indicator">连接中...</div>
+        <div class="text-md-end">
+          <div class="btn-group btn-group-sm language-switcher mb-2" role="group" id="language-switcher">
+            <button type="button" class="btn btn-outline-secondary" data-lang="zh">中文</button>
+            <button type="button" class="btn btn-outline-secondary" data-lang="ja">日本語</button>
+            <button type="button" class="btn btn-outline-secondary" data-lang="en">English</button>
+          </div>
+          <div class="badge bg-secondary d-block" id="status-indicator" data-i18n="status.connecting">连接中...</div>
           <div class="small text-muted" id="last-update">--</div>
         </div>
       </div>
@@ -33,12 +38,12 @@
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <div class="d-flex flex-column flex-xl-row align-items-xl-center justify-content-between gap-3 mb-3">
-                <h2 class="h5 mb-0">压力热力图</h2>
+                <h2 class="h5 mb-0" data-i18n="heatmap.heading">压力热力图</h2>
                 <div class="w-100">
                   <div class="row gy-2 gx-2 align-items-stretch heatmap-controls">
                     <div class="col-12 col-md-6 col-xl-auto">
                       <div class="input-group">
-                        <span class="input-group-text">设备</span>
+                        <span class="input-group-text" data-i18n="controls.device">设备</span>
                         <select class="form-select" id="device-selector" disabled>
                           <option value="">等待数据...</option>
                         </select>
@@ -46,40 +51,71 @@
                     </div>
                     <div class="col-12 col-md-6 col-xl-auto">
                       <div class="input-group">
-                        <span class="input-group-text">行 × 列</span>
+                        <span class="input-group-text" data-i18n="controls.layout">布局</span>
                         <select class="form-select" id="layout-selector" disabled>
                           <option value="">--</option>
                         </select>
                       </div>
                     </div>
-                    <div class="col-12 col-xl">
-                      <div class="input-group pressure-range-group">
-                        <span class="input-group-text">压力范围</span>
-                        <input
-                          type="number"
-                          class="form-control"
-                          id="pressure-min"
-                          placeholder="下限"
-                          step="any"
-                        />
-                        <span class="input-group-text">~</span>
-                        <input
-                          type="number"
-                          class="form-control"
-                          id="pressure-max"
-                          placeholder="上限"
-                          step="any"
-                        />
-                        <button class="btn btn-outline-secondary" type="button" id="reset-range">
-                          重置
-                        </button>
+                    <div class="col-12 col-md-6 col-xl-auto">
+                      <div class="mirror-toggle-group d-flex flex-wrap align-items-center gap-3">
+                        <div class="form-check form-switch mb-0">
+                          <input class="form-check-input" type="checkbox" id="mirror-rows" />
+                          <label class="form-check-label" for="mirror-rows" data-i18n="controls.mirror_rows">行镜像</label>
+                        </div>
+                        <div class="form-check form-switch mb-0">
+                          <input class="form-check-input" type="checkbox" id="mirror-cols" />
+                          <label class="form-check-label" for="mirror-cols" data-i18n="controls.mirror_cols">列镜像</label>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-12">
+                      <div class="pressure-range-group">
+                        <div class="row gy-2 gx-2 align-items-center">
+                          <div class="col-12">
+                            <div class="fw-semibold text-secondary" data-i18n="controls.range">压力范围</div>
+                          </div>
+                          <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+                            <label class="visually-hidden" for="pressure-min" data-i18n="inputs.lower_label">压力下限</label>
+                            <div class="input-group">
+                              <span class="input-group-text" data-i18n="inputs.lower_label">下限</span>
+                              <input
+                                type="number"
+                                class="form-control"
+                                id="pressure-min"
+                                placeholder="下限"
+                                data-i18n-placeholder="inputs.placeholder.lower"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+                          <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+                            <label class="visually-hidden" for="pressure-max" data-i18n="inputs.upper_label">压力上限</label>
+                            <div class="input-group">
+                              <span class="input-group-text" data-i18n="inputs.upper_label">上限</span>
+                              <input
+                                type="number"
+                                class="form-control"
+                                id="pressure-max"
+                                placeholder="上限"
+                                data-i18n-placeholder="inputs.placeholder.upper"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+                          <div class="col-12 col-sm-auto">
+                            <button class="btn btn-outline-secondary w-100 w-sm-auto" type="button" id="reset-range" data-i18n="actions.reset">
+                              重置
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
               <div id="heatmap-container">
-                <div class="heatmap-placeholder">等待数据...</div>
+                <div class="heatmap-placeholder" data-i18n="heatmap.empty.waiting">等待数据...</div>
               </div>
             </div>
           </div>
@@ -87,13 +123,13 @@
         <div class="col-lg-4">
           <div class="card shadow-sm h-100">
             <div class="card-body">
-              <h2 class="h5 mb-3">当前概览</h2>
+              <h2 class="h5 mb-3" data-i18n="overview.title">当前概览</h2>
               <div class="mb-3">
-                <div class="fw-semibold">活跃设备</div>
+                <div class="fw-semibold" data-i18n="overview.active_devices">活跃设备</div>
                 <div class="display-6" id="active-devices">0</div>
               </div>
               <div>
-                <div class="fw-semibold">总压力</div>
+                <div class="fw-semibold" data-i18n="overview.total_pressure">总压力</div>
                 <div class="display-6" id="total-pressure">0</div>
               </div>
             </div>
@@ -103,23 +139,17 @@
 
       <div class="card shadow-sm mt-4">
         <div class="card-body">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="h5 mb-0">设备详情</h2>
-            <div class="form-check form-switch">
-              <input class="form-check-input" type="checkbox" id="autoScroll" checked />
-              <label class="form-check-label" for="autoScroll">新数据时自动滚动</label>
-            </div>
-          </div>
+          <h2 class="h5 mb-3" data-i18n="table.title">设备详情</h2>
           <div class="table-responsive" style="max-height: 360px;">
             <table class="table table-striped align-middle" id="device-table">
               <thead class="table-light sticky-top">
                 <tr>
-                  <th scope="col">DN</th>
-                  <th scope="col">压力传感器数</th>
-                  <th scope="col">压力总和</th>
-                  <th scope="col">最新帧时间</th>
-                  <th scope="col">接收时间</th>
-                  <th scope="col" class="text-center">操作</th>
+                  <th scope="col" data-i18n="table.headers.dn">DN</th>
+                  <th scope="col" data-i18n="table.headers.count">压力传感器数</th>
+                  <th scope="col" data-i18n="table.headers.sum">压力总和</th>
+                  <th scope="col" data-i18n="table.headers.frame_time">最新帧时间</th>
+                  <th scope="col" data-i18n="table.headers.receive_time">接收时间</th>
+                  <th scope="col" class="text-center" data-i18n="table.headers.actions">操作</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -133,6 +163,7 @@
       const STREAM_ENDPOINT = "{{ url_for('proxy_stream') }}";
 
       const state = new Map();
+      const mirrorSettingsByDevice = new Map();
       const STALE_THRESHOLD_MS = 30 * 1000;
       const deviceSelector = document.getElementById("device-selector");
       const layoutSelector = document.getElementById("layout-selector");
@@ -140,10 +171,16 @@
       const pressureMinInput = document.getElementById("pressure-min");
       const pressureMaxInput = document.getElementById("pressure-max");
       const resetRangeButton = document.getElementById("reset-range");
+      const mirrorRowsToggle = document.getElementById("mirror-rows");
+      const mirrorColsToggle = document.getElementById("mirror-cols");
+      const statusIndicator = document.getElementById("status-indicator");
+      const languageButtons = document.querySelectorAll("#language-switcher [data-lang]");
       let selectedDevice = null;
       let selectedLayoutKey = null;
       let customRangeMin = null;
       let customRangeMax = null;
+      let mirrorRows = false;
+      let mirrorCols = false;
 
       const COLOR_GREEN = [46, 204, 113];
       const COLOR_YELLOW = [241, 196, 15];
@@ -157,6 +194,213 @@
         { stop: 1, color: COLOR_RED }
       ];
 
+      const LANGUAGE_META = {
+        zh: { locale: "zh-CN" },
+        ja: { locale: "ja-JP" },
+        en: { locale: "en" }
+      };
+
+      const TRANSLATIONS = {
+        zh: {
+          "page.title": "实时压力监控面板",
+          "header.title": "实时压力监控面板",
+          "header.data_source": "数据来源：",
+          "status.connecting": "连接中...",
+          "status.snapshot_ok": "已连接",
+          "status.snapshot_error": "桥接不可用",
+          "status.stream_error": "实时连接中断",
+          "status.stream_ok": "实时连接已建立",
+          "heatmap.heading": "压力热力图",
+          "controls.device": "设备",
+          "controls.layout": "布局",
+          "controls.mirror_rows": "行镜像",
+          "controls.mirror_cols": "列镜像",
+          "controls.range": "压力范围",
+          "controls.waiting": "等待数据...",
+          "inputs.lower_label": "下限",
+          "inputs.upper_label": "上限",
+          "inputs.placeholder.lower": "下限",
+          "inputs.placeholder.upper": "上限",
+          "actions.reset": "重置",
+          "overview.title": "当前概览",
+          "overview.active_devices": "活跃设备",
+          "overview.total_pressure": "总压力",
+          "table.title": "设备详情",
+          "table.headers.dn": "DN",
+          "table.headers.count": "压力传感器数",
+          "table.headers.sum": "压力总和",
+          "table.headers.frame_time": "最新帧时间",
+          "table.headers.receive_time": "接收时间",
+          "table.headers.actions": "操作",
+          "table.actions.stop_tracking": "停止追踪",
+          "heatmap.empty.no_device": "选择设备以查看压力热力图",
+          "heatmap.empty.no_layout": "请选择布局组合",
+          "heatmap.empty.waiting": "等待设备数据更新...",
+          "heatmap.tooltip.value": "压力值：",
+          "heatmap.tooltip.missing": "缺少压力数据",
+          "console.snapshot_fetch_failed": "无法获取数据",
+          "console.snapshot_event_error": "解析快照事件失败",
+          "console.update_event_error": "解析更新事件失败"
+        },
+        ja: {
+          "page.title": "リアルタイム圧力モニター",
+          "header.title": "リアルタイム圧力モニター",
+          "header.data_source": "データソース：",
+          "status.connecting": "接続中...",
+          "status.snapshot_ok": "スナップショットを取得",
+          "status.snapshot_error": "ブリッジに接続できません",
+          "status.stream_error": "リアルタイム接続が中断しました",
+          "status.stream_ok": "リアルタイム接続が確立されました",
+          "heatmap.heading": "圧力ヒートマップ",
+          "controls.device": "デバイス",
+          "controls.layout": "レイアウト",
+          "controls.mirror_rows": "行を反転",
+          "controls.mirror_cols": "列を反転",
+          "controls.range": "圧力範囲",
+          "controls.waiting": "データ待機中...",
+          "inputs.lower_label": "下限",
+          "inputs.upper_label": "上限",
+          "inputs.placeholder.lower": "下限",
+          "inputs.placeholder.upper": "上限",
+          "actions.reset": "リセット",
+          "overview.title": "概要",
+          "overview.active_devices": "アクティブデバイス",
+          "overview.total_pressure": "総圧力",
+          "table.title": "デバイス詳細",
+          "table.headers.dn": "DN",
+          "table.headers.count": "センサー数",
+          "table.headers.sum": "圧力合計",
+          "table.headers.frame_time": "最新フレーム時刻",
+          "table.headers.receive_time": "受信時刻",
+          "table.headers.actions": "操作",
+          "table.actions.stop_tracking": "監視を停止",
+          "heatmap.empty.no_device": "デバイスを選択してヒートマップを表示",
+          "heatmap.empty.no_layout": "レイアウトを選択してください",
+          "heatmap.empty.waiting": "デバイスデータの更新を待機中...",
+          "heatmap.tooltip.value": "圧力値：",
+          "heatmap.tooltip.missing": "圧力データなし",
+          "console.snapshot_fetch_failed": "データを取得できませんでした",
+          "console.snapshot_event_error": "スナップショットイベントの解析に失敗しました",
+          "console.update_event_error": "アップデートイベントの解析に失敗しました"
+        },
+        en: {
+          "page.title": "Real-Time Pressure Dashboard",
+          "header.title": "Real-Time Pressure Dashboard",
+          "header.data_source": "Data source: ",
+          "status.connecting": "Connecting...",
+          "status.snapshot_ok": "Snapshot loaded",
+          "status.snapshot_error": "Bridge unavailable",
+          "status.stream_error": "Realtime feed interrupted",
+          "status.stream_ok": "Realtime feed active",
+          "heatmap.heading": "Pressure Heatmap",
+          "controls.device": "Device",
+          "controls.layout": "Layout",
+          "controls.mirror_rows": "Mirror rows",
+          "controls.mirror_cols": "Mirror columns",
+          "controls.range": "Pressure range",
+          "controls.waiting": "Waiting for data...",
+          "inputs.lower_label": "Min",
+          "inputs.upper_label": "Max",
+          "inputs.placeholder.lower": "Min",
+          "inputs.placeholder.upper": "Max",
+          "actions.reset": "Reset",
+          "overview.title": "Overview",
+          "overview.active_devices": "Active devices",
+          "overview.total_pressure": "Total pressure",
+          "table.title": "Device Details",
+          "table.headers.dn": "DN",
+          "table.headers.count": "Sensor count",
+          "table.headers.sum": "Pressure total",
+          "table.headers.frame_time": "Latest frame time",
+          "table.headers.receive_time": "Received at",
+          "table.headers.actions": "Actions",
+          "table.actions.stop_tracking": "Stop tracking",
+          "heatmap.empty.no_device": "Select a device to view the heatmap",
+          "heatmap.empty.no_layout": "Choose a layout",
+          "heatmap.empty.waiting": "Waiting for device data...",
+          "heatmap.tooltip.value": "Pressure: ",
+          "heatmap.tooltip.missing": "No pressure data",
+          "console.snapshot_fetch_failed": "Failed to fetch data",
+          "console.snapshot_event_error": "Failed to parse snapshot event",
+          "console.update_event_error": "Failed to parse update event"
+        }
+      };
+      let currentLanguage = localStorage.getItem("uiLanguage") || "zh";
+      if (!Object.prototype.hasOwnProperty.call(TRANSLATIONS, currentLanguage)) {
+        currentLanguage = "zh";
+      }
+      let currentStatusKey = "connecting";
+
+      function t(key) {
+        const pack = TRANSLATIONS[currentLanguage] || TRANSLATIONS.zh;
+        if (Object.prototype.hasOwnProperty.call(pack, key)) {
+          return pack[key];
+        }
+        return TRANSLATIONS.zh[key] ?? key;
+      }
+
+      function updateStatusIndicatorText() {
+        if (!statusIndicator) {
+          return;
+        }
+        statusIndicator.textContent = t(`status.${currentStatusKey}`);
+      }
+
+      function setStatusIndicator(stateKey) {
+        currentStatusKey = stateKey;
+        updateStatusIndicatorText();
+      }
+
+      function updateLanguageSwitcherState() {
+        languageButtons.forEach((button) => {
+          const isActive = button.dataset.lang === currentLanguage;
+          button.classList.toggle("btn-primary", isActive);
+          button.classList.toggle("btn-outline-secondary", !isActive);
+          button.setAttribute("aria-pressed", String(isActive));
+        });
+      }
+
+      function applyLanguage() {
+        const locale = LANGUAGE_META[currentLanguage]?.locale || "zh-CN";
+        document.documentElement.lang = locale;
+        document.title = t("page.title");
+        document.querySelectorAll("[data-i18n]").forEach((el) => {
+          const key = el.dataset.i18n;
+          if (!key) return;
+          const translation = t(key);
+          if (translation !== undefined) {
+            el.textContent = translation;
+          }
+        });
+        document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+          const key = el.dataset.i18nPlaceholder;
+          if (!key) return;
+          const translation = t(key);
+          if (translation !== undefined) {
+            el.setAttribute("placeholder", translation);
+          }
+        });
+        updateStatusIndicatorText();
+        updateLanguageSwitcherState();
+        updateRangePlaceholders(null, null);
+      }
+
+      function setLanguage(lang) {
+        if (!Object.prototype.hasOwnProperty.call(TRANSLATIONS, lang)) {
+          return;
+        }
+        currentLanguage = lang;
+        localStorage.setItem("uiLanguage", lang);
+        applyLanguage();
+        refreshUI();
+      }
+
+      languageButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          setLanguage(button.dataset.lang);
+        });
+      });
+
       deviceSelector.addEventListener("change", (event) => {
         selectedDevice = event.target.value || null;
         updateLayoutOptions();
@@ -166,6 +410,22 @@
         selectedLayoutKey = event.target.value || null;
         updateHeatmap();
       });
+
+      if (mirrorRowsToggle) {
+        mirrorRowsToggle.addEventListener("change", (event) => {
+          mirrorRows = Boolean(event.target.checked);
+          persistMirrorSettings();
+          updateHeatmap();
+        });
+      }
+
+      if (mirrorColsToggle) {
+        mirrorColsToggle.addEventListener("change", (event) => {
+          mirrorCols = Boolean(event.target.checked);
+          persistMirrorSettings();
+          updateHeatmap();
+        });
+      }
 
       if (pressureMinInput && pressureMaxInput) {
         ["input", "change"].forEach((eventName) => {
@@ -290,14 +550,14 @@
           if (Number.isFinite(dataMin)) {
             pressureMinInput.placeholder = dataMin.toFixed(2);
           } else {
-            pressureMinInput.placeholder = "下限";
+            pressureMinInput.placeholder = t("inputs.placeholder.lower");
           }
         }
         if (pressureMaxInput) {
           if (Number.isFinite(dataMax)) {
             pressureMaxInput.placeholder = dataMax.toFixed(2);
           } else {
-            pressureMaxInput.placeholder = "上限";
+            pressureMaxInput.placeholder = t("inputs.placeholder.upper");
           }
         }
       }
@@ -376,6 +636,50 @@
         return ratio >= 0.75 ? "#ffffff" : "#212529";
       }
 
+      function applyMirroring(values, rows, cols) {
+        if (!rows || !cols) {
+          return values.slice();
+        }
+        const result = [];
+        for (let displayRow = 0; displayRow < rows; displayRow += 1) {
+          const sourceRow = mirrorRows ? rows - 1 - displayRow : displayRow;
+          const start = sourceRow * cols;
+          const rowValues = values.slice(start, start + cols);
+          if (mirrorCols) {
+            rowValues.reverse();
+          }
+          result.push(...rowValues);
+        }
+        return result;
+      }
+
+      function persistMirrorSettings() {
+        if (!selectedDevice) {
+          return;
+        }
+        mirrorSettingsByDevice.set(selectedDevice, {
+          rows: mirrorRows,
+          cols: mirrorCols
+        });
+      }
+
+      function syncMirrorControlsFromState() {
+        if (!mirrorRowsToggle || !mirrorColsToggle) {
+          mirrorRows = false;
+          mirrorCols = false;
+          return;
+        }
+        const settings = selectedDevice ? mirrorSettingsByDevice.get(selectedDevice) : null;
+        mirrorRows = settings ? Boolean(settings.rows) : false;
+        mirrorCols = settings ? Boolean(settings.cols) : false;
+      mirrorRowsToggle.checked = mirrorRows;
+      mirrorColsToggle.checked = mirrorCols;
+    }
+
+      function setHeatmapPlaceholder(key) {
+        heatmapContainer.innerHTML = `<div class="heatmap-placeholder">${t(key)}</div>`;
+      }
+
       function updateHeatmap() {
         heatmapContainer.innerHTML = "";
         if (!selectedDevice) {
@@ -384,7 +688,7 @@
         }
         const entry = state.get(selectedDevice);
         if (!entry) {
-          heatmapContainer.innerHTML = `<div class="heatmap-placeholder">等待设备数据更新...</div>`;
+          setHeatmapPlaceholder("heatmap.empty.waiting");
           return;
         }
         const layout = parseLayoutKey(selectedLayoutKey);
@@ -398,10 +702,12 @@
         if (values.length > totalCells) {
           values.length = totalCells;
         }
-        while (values.length < totalCells) {
-          values.push(NaN);
+        const paddedValues = values.slice();
+        while (paddedValues.length < totalCells) {
+          paddedValues.push(NaN);
         }
-        const validValues = values.filter((value) => Number.isFinite(value));
+        const displayValues = applyMirroring(paddedValues, rows, cols);
+        const validValues = paddedValues.filter((value) => Number.isFinite(value));
         const hasValidValues = validValues.length > 0;
         const dataMin = hasValidValues ? Math.min(...validValues) : null;
         const dataMax = hasValidValues ? Math.max(...validValues) : null;
@@ -415,18 +721,18 @@
         grid.style.setProperty("--rows", rows);
         grid.style.setProperty("--cols", cols);
 
-        values.forEach((value) => {
+        displayValues.forEach((value) => {
           const cell = document.createElement("div");
           cell.className = "heatmap-cell";
           if (Number.isFinite(value)) {
             cell.textContent = value.toFixed(2);
             cell.style.backgroundColor = valueToColor(value, min, max);
             cell.style.color = valueToTextColor(value, min, max);
-            cell.title = `压力值：${value}`;
+            cell.title = `${t("heatmap.tooltip.value")}${value}`;
           } else {
             cell.classList.add("is-empty");
             cell.textContent = "--";
-            cell.title = "缺少压力数据";
+            cell.title = t("heatmap.tooltip.missing");
           }
           grid.appendChild(cell);
         });
@@ -436,6 +742,13 @@
 
       function updateLayoutOptions() {
         layoutSelector.innerHTML = "";
+        if (mirrorRowsToggle) {
+          mirrorRowsToggle.disabled = true;
+        }
+        if (mirrorColsToggle) {
+          mirrorColsToggle.disabled = true;
+        }
+        syncMirrorControlsFromState();
         const entry = selectedDevice ? state.get(selectedDevice) : null;
         if (!entry || !Number.isInteger(entry.sensorCount) || entry.sensorCount <= 0) {
           const option = document.createElement("option");
@@ -474,6 +787,12 @@
         selectedLayoutKey = hasPrevious ? previous : defaultKey;
         layoutSelector.value = selectedLayoutKey || "";
         layoutSelector.disabled = pairs.length <= 1;
+        if (mirrorRowsToggle) {
+          mirrorRowsToggle.disabled = false;
+        }
+        if (mirrorColsToggle) {
+          mirrorColsToggle.disabled = false;
+        }
         updateHeatmap();
       }
 
@@ -484,7 +803,7 @@
         if (!devices.length) {
           const option = document.createElement("option");
           option.value = "";
-          option.textContent = "等待数据...";
+          option.textContent = t("controls.waiting");
           deviceSelector.appendChild(option);
           deviceSelector.disabled = true;
           selectedDevice = null;
@@ -544,7 +863,6 @@
 
       function updateTable() {
         const tbody = document.querySelector("#device-table tbody");
-        const autoScroll = document.getElementById("autoScroll").checked;
         const now = Date.now();
         const rows = Array.from(state.values()).sort((a, b) => {
           if (a.dn && b.dn && a.dn.localeCompare) {
@@ -555,6 +873,7 @@
           return 0;
         });
         tbody.innerHTML = "";
+        const stopLabel = t("table.actions.stop_tracking");
         for (const entry of rows) {
           const tr = document.createElement("tr");
           const isStale = !entry.receivedAt || now - entry.receivedAt > STALE_THRESHOLD_MS;
@@ -578,11 +897,13 @@
               event.stopPropagation();
               removeDevice(entry.dn);
             });
+            removeButton.setAttribute("title", stopLabel);
           }
           tbody.appendChild(tr);
         }
-        if (autoScroll) {
-          tbody.parentElement.scrollTop = 0;
+        const parent = tbody.parentElement;
+        if (parent) {
+          parent.scrollTop = 0;
         }
       }
 
@@ -591,6 +912,7 @@
           return;
         }
         state.delete(dn);
+        mirrorSettingsByDevice.delete(dn);
         if (selectedDevice === dn) {
           selectedDevice = null;
         }
@@ -661,14 +983,14 @@
             data.data.forEach((item) => applyEntry(item, { defer: true }));
             refreshUI();
           }
-          document.getElementById("status-indicator").textContent = "已连接";
+          setStatusIndicator("snapshot_ok");
           document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-danger");
           document.getElementById("status-indicator").classList.add("bg-success");
         } catch (err) {
-          document.getElementById("status-indicator").textContent = "桥接不可达";
+          setStatusIndicator("snapshot_error");
           document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-success");
           document.getElementById("status-indicator").classList.add("bg-danger");
-          console.error("无法获取快照", err);
+          console.error(t("console.snapshot_fetch_failed"), err);
         }
       }
 
@@ -682,7 +1004,7 @@
               refreshUI();
             }
           } catch (err) {
-            console.error("解析 snapshot 数据失败", err);
+            console.error(t("console.snapshot_event_error"), err);
           }
         });
         source.addEventListener("update", (event) => {
@@ -690,21 +1012,23 @@
             const payload = JSON.parse(event.data);
             applyEntry(payload);
           } catch (err) {
-            console.error("解析 update 数据失败", err);
+            console.error(t("console.update_event_error"), err);
           }
         });
         source.addEventListener("error", (event) => {
-          document.getElementById("status-indicator").textContent = "实时连接中断";
+          setStatusIndicator("stream_error");
           document.getElementById("status-indicator").classList.remove("bg-success");
           document.getElementById("status-indicator").classList.add("bg-warning");
         });
         source.onopen = () => {
-          document.getElementById("status-indicator").textContent = "实时连接正常";
+          setStatusIndicator("stream_ok");
           document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-danger", "bg-warning");
           document.getElementById("status-indicator").classList.add("bg-success");
         };
       }
 
+      applyLanguage();
+      refreshUI();
       fetchSnapshot();
       subscribeStream();
     </script>
