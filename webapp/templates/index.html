@@ -32,7 +32,7 @@
         <div class="col-lg-8">
           <div class="card shadow-sm h-100">
             <div class="card-body">
-              <h2 class="h5 mb-3">总压力趋势</h2>
+              <h2 class="h5 mb-3">设备压力概览</h2>
               <canvas id="pressureChart" height="220"></canvas>
             </div>
           </div>
@@ -87,13 +87,10 @@
 
     <!-- 再加载你的内联逻辑（此处才会用到 Chart / Luxon） -->
     <script>
-      console.log('Chart loaded?', !!window.Chart);   // 应为 true
-      console.log('Luxon loaded?', !!window.luxon);   // 应为 true
       const SNAPSHOT_ENDPOINT = "{{ url_for('proxy_latest') }}";
       const STREAM_ENDPOINT = "{{ url_for('proxy_stream') }}";
 
       const state = new Map();
-      const historyLimit = 60;
       const colors = [
         "#4c6ef5",
         "#ff922b",
@@ -105,33 +102,34 @@
         "#e64980"
       ];
 
+      const deviceColors = new Map();
+      let colorIndex = 0;
+      const STALE_THRESHOLD_MS = 7000;
+
       const chart = new Chart(document.getElementById("pressureChart"), {
-        type: "line",
+        type: "bar",
         data: {
-          datasets: []
+          labels: [],
+          datasets: [
+            {
+              label: "压力总和",
+              data: [],
+              backgroundColor: []
+            }
+          ]
         },
         options: {
           responsive: true,
           animation: false,
-          interaction: {
-            intersect: false,
-            mode: "nearest"
-          },
           scales: {
             x: {
-              type: "time",
-              time: {
-                tooltipFormat: "HH:mm:ss",
-                displayFormats: {
-                  second: "HH:mm:ss"
-                }
-              },
-              ticks: {
-                autoSkip: true,
-                maxTicksLimit: 10
+              title: {
+                display: true,
+                text: "设备编号"
               }
             },
             y: {
+              beginAtZero: true,
               title: {
                 display: true,
                 text: "压力总和"
@@ -140,59 +138,62 @@
           },
           plugins: {
             legend: {
-              display: true,
-              position: "bottom"
+              display: false
             }
           }
         }
       });
 
-      function ensureDataset(dn) {
-        let ds = chart.data.datasets.find((d) => d.label === dn);
-        if (!ds) {
-          const color = colors[chart.data.datasets.length % colors.length];
-          ds = {
-            label: dn,
-            data: [],
-            borderColor: color,
-            backgroundColor: color + "33",
-            tension: 0.25,
-            spanGaps: true
-          };
-          chart.data.datasets.push(ds);
+      function getDeviceColor(dn) {
+        if (!deviceColors.has(dn)) {
+          const color = colors[colorIndex % colors.length];
+          colorIndex += 1;
+          deviceColors.set(dn, color);
         }
-        return ds;
+        return deviceColors.get(dn);
       }
 
-      function addHistoryPoint(dn, timestamp, sum) {
-        if (!Number.isFinite(sum)) {
-          return;
-        }
-        const ds = ensureDataset(dn);
-        ds.data.push({ x: timestamp, y: sum });
-        if (ds.data.length > historyLimit) {
-          ds.data.splice(0, ds.data.length - historyLimit);
-        }
+      function updateChart() {
+        const dataset = chart.data.datasets[0];
+        const entries = Array.from(state.values()).sort(
+          (a, b) => (b.receivedAt || 0) - (a.receivedAt || 0)
+        );
+        chart.data.labels = entries.map((entry) => entry.dn);
+        dataset.data = entries.map((entry) =>
+          Number.isFinite(entry.pressureSum) ? entry.pressureSum : 0
+        );
+        dataset.backgroundColor = entries.map((entry) => getDeviceColor(entry.dn));
         chart.update("none");
       }
 
       function updateSummary() {
-        const devices = state.size;
+        const now = Date.now();
+        let active = 0;
         let total = 0;
         for (const entry of state.values()) {
-          total += entry.pressureSum ?? 0;
+          if (Number.isFinite(entry.pressureSum)) {
+            total += entry.pressureSum;
+          }
+          if (entry.receivedAt && now - entry.receivedAt <= STALE_THRESHOLD_MS) {
+            active += 1;
+          }
         }
-        document.getElementById("active-devices").textContent = devices;
+        document.getElementById("active-devices").textContent = active;
         document.getElementById("total-pressure").textContent = total.toFixed(2);
       }
 
      function updateTable() {
         const tbody = document.querySelector("#device-table tbody");
         const autoScroll = document.getElementById("autoScroll").checked;
+        const now = Date.now();
         const rows = Array.from(state.values()).sort((a, b) => (b.receivedAt || 0) - (a.receivedAt || 0));
         tbody.innerHTML = "";
         for (const entry of rows) {
           const tr = document.createElement("tr");
+          const isStale = !entry.receivedAt || now - entry.receivedAt > STALE_THRESHOLD_MS;
+          if (isStale) {
+            tr.classList.add("text-muted");
+          }
           const pressureText = Number.isFinite(entry.pressureSum) ? entry.pressureSum.toFixed(2) : "--";
           tr.innerHTML = `
             <td><code>${entry.dn}</code></td>
@@ -236,15 +237,25 @@
         };
       }
 
-      function applyEntry(entry) {
+      function applyEntry(entry, options = {}) {
         const normalized = normalizeEntry(entry);
         if (!normalized) return;
         state.set(normalized.dn, normalized);
-        addHistoryPoint(normalized.dn, normalized.receivedAt, normalized.pressureSum ?? NaN);
+        if (!options.defer) {
+          refreshUI();
+        }
+      }
+
+      function refreshUI() {
         updateSummary();
         updateTable();
+        updateChart();
         const lastUpdate = document.getElementById("last-update");
-        lastUpdate.textContent = new Date().toLocaleString();
+        const latest = Array.from(state.values()).reduce(
+          (max, entry) => Math.max(max, entry.receivedAt || 0),
+          0
+        );
+        lastUpdate.textContent = latest ? new Date(latest).toLocaleString() : "--";
       }
 
       async function fetchSnapshot() {
@@ -252,7 +263,8 @@
           const resp = await fetch(SNAPSHOT_ENDPOINT);
           const data = await resp.json();
           if (Array.isArray(data.data)) {
-            data.data.forEach(applyEntry);
+            data.data.forEach((item) => applyEntry(item, { defer: true }));
+            refreshUI();
           }
           document.getElementById("status-indicator").textContent = "已连接";
           document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-danger");
@@ -271,7 +283,8 @@
           try {
             const payload = JSON.parse(event.data);
             if (Array.isArray(payload.data)) {
-              payload.data.forEach(applyEntry);
+              payload.data.forEach((item) => applyEntry(item, { defer: true }));
+              refreshUI();
             }
           } catch (err) {
             console.error("解析 snapshot 数据失败", err);
