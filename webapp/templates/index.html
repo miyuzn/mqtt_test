@@ -34,18 +34,47 @@
             <div class="card-body">
               <div class="d-flex flex-column flex-xl-row align-items-xl-center justify-content-between gap-3 mb-3">
                 <h2 class="h5 mb-0">压力热力图</h2>
-                <div class="d-flex flex-column flex-sm-row gap-2 w-100 w-xl-auto heatmap-controls">
-                  <div class="input-group">
-                    <span class="input-group-text">设备</span>
-                    <select class="form-select" id="device-selector" disabled>
-                      <option value="">等待数据...</option>
-                    </select>
-                  </div>
-                  <div class="input-group">
-                    <span class="input-group-text">行 × 列</span>
-                    <select class="form-select" id="layout-selector" disabled>
-                      <option value="">--</option>
-                    </select>
+                <div class="w-100">
+                  <div class="row gy-2 gx-2 align-items-stretch heatmap-controls">
+                    <div class="col-12 col-md-6 col-xl-auto">
+                      <div class="input-group">
+                        <span class="input-group-text">设备</span>
+                        <select class="form-select" id="device-selector" disabled>
+                          <option value="">等待数据...</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-xl-auto">
+                      <div class="input-group">
+                        <span class="input-group-text">行 × 列</span>
+                        <select class="form-select" id="layout-selector" disabled>
+                          <option value="">--</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="col-12 col-xl">
+                      <div class="input-group pressure-range-group">
+                        <span class="input-group-text">压力范围</span>
+                        <input
+                          type="number"
+                          class="form-control"
+                          id="pressure-min"
+                          placeholder="下限"
+                          step="any"
+                        />
+                        <span class="input-group-text">~</span>
+                        <input
+                          type="number"
+                          class="form-control"
+                          id="pressure-max"
+                          placeholder="上限"
+                          step="any"
+                        />
+                        <button class="btn btn-outline-secondary" type="button" id="reset-range">
+                          重置
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -108,8 +137,25 @@
       const deviceSelector = document.getElementById("device-selector");
       const layoutSelector = document.getElementById("layout-selector");
       const heatmapContainer = document.getElementById("heatmap-container");
+      const pressureMinInput = document.getElementById("pressure-min");
+      const pressureMaxInput = document.getElementById("pressure-max");
+      const resetRangeButton = document.getElementById("reset-range");
       let selectedDevice = null;
       let selectedLayoutKey = null;
+      let customRangeMin = null;
+      let customRangeMax = null;
+
+      const COLOR_GREEN = [46, 204, 113];
+      const COLOR_YELLOW = [241, 196, 15];
+      const COLOR_ORANGE = [243, 156, 18];
+      const COLOR_RED = [231, 76, 60];
+
+      const GRADIENT_STOPS = [
+        { stop: 0, color: COLOR_GREEN },
+        { stop: 0.33, color: COLOR_YELLOW },
+        { stop: 0.66, color: COLOR_ORANGE },
+        { stop: 1, color: COLOR_RED }
+      ];
 
       deviceSelector.addEventListener("change", (event) => {
         selectedDevice = event.target.value || null;
@@ -120,6 +166,29 @@
         selectedLayoutKey = event.target.value || null;
         updateHeatmap();
       });
+
+      if (pressureMinInput && pressureMaxInput) {
+        ["input", "change"].forEach((eventName) => {
+          pressureMinInput.addEventListener(eventName, handleCustomRangeChange);
+          pressureMaxInput.addEventListener(eventName, handleCustomRangeChange);
+        });
+      }
+
+      if (resetRangeButton) {
+        resetRangeButton.addEventListener("click", () => {
+          if (pressureMinInput) {
+            pressureMinInput.value = "";
+            pressureMinInput.classList.remove("is-invalid");
+          }
+          if (pressureMaxInput) {
+            pressureMaxInput.value = "";
+            pressureMaxInput.classList.remove("is-invalid");
+          }
+          customRangeMin = null;
+          customRangeMax = null;
+          updateHeatmap();
+        });
+      }
 
       function computeFactorPairs(sn) {
         if (!Number.isInteger(sn) || sn <= 0) {
@@ -167,27 +236,144 @@
         return [rows, cols];
       }
 
+      function handleCustomRangeChange() {
+        if (!pressureMinInput || !pressureMaxInput) {
+          return;
+        }
+        const rawMin = pressureMinInput.value.trim();
+        const rawMax = pressureMaxInput.value.trim();
+        const hasMin = rawMin !== "";
+        const hasMax = rawMax !== "";
+        const minValue = Number(rawMin);
+        const maxValue = Number(rawMax);
+        const minValid = !hasMin || Number.isFinite(minValue);
+        const maxValid = !hasMax || Number.isFinite(maxValue);
+
+        pressureMinInput.classList.remove("is-invalid");
+        pressureMaxInput.classList.remove("is-invalid");
+
+        if (!minValid || !maxValid) {
+          if (!minValid) {
+            pressureMinInput.classList.add("is-invalid");
+          }
+          if (!maxValid) {
+            pressureMaxInput.classList.add("is-invalid");
+          }
+          customRangeMin = null;
+          customRangeMax = null;
+          updateHeatmap();
+          return;
+        }
+
+        if (hasMin && hasMax) {
+          if (minValue < maxValue) {
+            customRangeMin = minValue;
+            customRangeMax = maxValue;
+          } else {
+            pressureMinInput.classList.add("is-invalid");
+            pressureMaxInput.classList.add("is-invalid");
+            customRangeMin = null;
+            customRangeMax = null;
+            updateHeatmap();
+            return;
+          }
+        } else {
+          customRangeMin = null;
+          customRangeMax = null;
+        }
+
+        updateHeatmap();
+      }
+
+      function updateRangePlaceholders(dataMin, dataMax) {
+        if (pressureMinInput) {
+          if (Number.isFinite(dataMin)) {
+            pressureMinInput.placeholder = dataMin.toFixed(2);
+          } else {
+            pressureMinInput.placeholder = "下限";
+          }
+        }
+        if (pressureMaxInput) {
+          if (Number.isFinite(dataMax)) {
+            pressureMaxInput.placeholder = dataMax.toFixed(2);
+          } else {
+            pressureMaxInput.placeholder = "上限";
+          }
+        }
+      }
+
+      function resolveEffectiveRange(dataMin, dataMax) {
+        if (
+          Number.isFinite(customRangeMin) &&
+          Number.isFinite(customRangeMax) &&
+          customRangeMin < customRangeMax
+        ) {
+          return { min: customRangeMin, max: customRangeMax };
+        }
+        if (Number.isFinite(dataMin) && Number.isFinite(dataMax)) {
+          return { min: dataMin, max: dataMax };
+        }
+        return { min: 0, max: 0 };
+      }
+
+      function toRgbString(color) {
+        return `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+      }
+
+      function interpolateGradient(stops, ratio) {
+        const clamped = Math.min(1, Math.max(0, ratio));
+        for (let i = 1; i < stops.length; i += 1) {
+          if (clamped <= stops[i].stop) {
+            const prev = stops[i - 1];
+            const next = stops[i];
+            const span = next.stop - prev.stop || 1;
+            const localT = span === 0 ? 0 : (clamped - prev.stop) / span;
+            const r = Math.round(prev.color[0] + (next.color[0] - prev.color[0]) * localT);
+            const g = Math.round(prev.color[1] + (next.color[1] - prev.color[1]) * localT);
+            const b = Math.round(prev.color[2] + (next.color[2] - prev.color[2]) * localT);
+            return `rgb(${r}, ${g}, ${b})`;
+          }
+        }
+        const last = stops[stops.length - 1];
+        return `rgb(${last.color[0]}, ${last.color[1]}, ${last.color[2]})`;
+      }
+
+      function computeValueRatio(value, min, max) {
+        if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || min === max) {
+          return null;
+        }
+        if (value <= min) {
+          return 0;
+        }
+        if (value >= max) {
+          return 1;
+        }
+        return (value - min) / (max - min);
+      }
+
       function valueToColor(value, min, max) {
         if (!Number.isFinite(value)) {
           return "#dee2e6";
         }
-        if (max === min) {
-          return "#4c6ef5";
+        if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
+          return toRgbString(COLOR_GREEN);
         }
-        const ratio = Math.min(1, Math.max(0, (value - min) / (max - min)));
-        const hue = 220 - ratio * 200;
-        return `hsl(${hue}, 80%, 60%)`;
+        if (value <= min) {
+          return toRgbString(COLOR_GREEN);
+        }
+        if (value >= max) {
+          return toRgbString(COLOR_RED);
+        }
+        const ratio = (value - min) / (max - min);
+        return interpolateGradient(GRADIENT_STOPS, ratio);
       }
 
       function valueToTextColor(value, min, max) {
-        if (!Number.isFinite(value)) {
-          return "#6c757d";
+        const ratio = computeValueRatio(value, min, max);
+        if (ratio === null) {
+          return "#212529";
         }
-        if (max === min) {
-          return "#ffffff";
-        }
-        const ratio = Math.min(1, Math.max(0, (value - min) / (max - min)));
-        return ratio > 0.6 ? "#ffffff" : "#212529";
+        return ratio >= 0.75 ? "#ffffff" : "#212529";
       }
 
       function updateHeatmap() {
@@ -216,8 +402,13 @@
           values.push(NaN);
         }
         const validValues = values.filter((value) => Number.isFinite(value));
-        const min = validValues.length ? Math.min(...validValues) : 0;
-        const max = validValues.length ? Math.max(...validValues) : 0;
+        const hasValidValues = validValues.length > 0;
+        const dataMin = hasValidValues ? Math.min(...validValues) : null;
+        const dataMax = hasValidValues ? Math.max(...validValues) : null;
+        updateRangePlaceholders(dataMin, dataMax);
+        const { min: resolvedMin, max: resolvedMax } = resolveEffectiveRange(dataMin, dataMax);
+        const min = Number.isFinite(resolvedMin) ? resolvedMin : 0;
+        const max = Number.isFinite(resolvedMax) ? resolvedMax : min;
 
         const grid = document.createElement("div");
         grid.className = "heatmap-grid";
@@ -344,6 +535,13 @@
         lastUpdate.textContent = latest ? new Date(latest).toLocaleString() : "--";
       }
 
+      function refreshUI() {
+        updateSummary();
+        updateTable();
+        updateDeviceOptions();
+        updateLastUpdateIndicator();
+      }
+
       function updateTable() {
         const tbody = document.querySelector("#device-table tbody");
         const autoScroll = document.getElementById("autoScroll").checked;
@@ -396,10 +594,7 @@
         if (selectedDevice === dn) {
           selectedDevice = null;
         }
-        updateSummary();
-        updateTable();
-        updateDeviceOptions();
-        updateLastUpdateIndicator();
+        refreshUI();
       }
 
       function normalizeEntry(entry) {
@@ -452,10 +647,10 @@
         const normalized = normalizeEntry(entry);
         if (!normalized) return;
         state.set(normalized.dn, normalized);
-        updateSummary();
-        updateTable();
-        updateDeviceOptions();
-        updateLastUpdateIndicator();
+        if (options.defer) {
+          return;
+        }
+        refreshUI();
       }
 
       async function fetchSnapshot() {

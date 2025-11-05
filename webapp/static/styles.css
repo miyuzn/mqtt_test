@@ -18,6 +18,22 @@ code {
   min-width: 4.5rem;
 }
 
+.heatmap-controls .pressure-range-group {
+  min-width: 20rem;
+  width: 100%;
+}
+
+@media (max-width: 767.98px) {
+  .heatmap-controls .pressure-range-group {
+    min-width: 0;
+  }
+}
+
+.heatmap-controls .pressure-range-group .btn {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
 #heatmap-container {
   min-height: 260px;
 }
