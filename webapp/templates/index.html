@@ -174,6 +174,9 @@
       const mirrorRowsToggle = document.getElementById("mirror-rows");
       const mirrorColsToggle = document.getElementById("mirror-cols");
       const statusIndicator = document.getElementById("status-indicator");
+      const activeDevicesLabel = document.getElementById("active-devices");
+      const totalPressureLabel = document.getElementById("total-pressure");
+      const lastUpdateLabel = document.getElementById("last-update");
       const languageButtons = document.querySelectorAll("#language-switcher [data-lang]");
       let selectedDevice = null;
       let selectedLayoutKey = null;
@@ -181,6 +184,60 @@
       let customRangeMax = null;
       let mirrorRows = false;
       let mirrorCols = false;
+      const REFRESH_INTERVAL_MS = 250;
+      const SNAPSHOT_POLL_INTERVAL_MS = 30000;
+      const STREAM_RECONNECT_BASE_DELAY_MS = 2000;
+      const STREAM_RECONNECT_MAX_DELAY_MS = 15000;
+      let pendingRefresh = false;
+      let refreshTimerId = null;
+      let lastRefreshTimestamp = 0;
+      let snapshotPollTimerId = null;
+      let currentEventSource = null;
+      let streamReconnectTimerId = null;
+      let streamReconnectAttempts = 0;
+      let deviceOptionsCache = { devices: [], selected: null, lang: null };
+      let layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null };
+
+      function clearStreamReconnectTimer() {
+        if (streamReconnectTimerId !== null) {
+          window.clearTimeout(streamReconnectTimerId);
+          streamReconnectTimerId = null;
+        }
+      }
+
+      function scheduleStreamReconnect() {
+        if (streamReconnectTimerId !== null) {
+          return;
+        }
+        const delay = Math.min(
+          STREAM_RECONNECT_BASE_DELAY_MS * Math.max(1, Math.pow(2, streamReconnectAttempts)),
+          STREAM_RECONNECT_MAX_DELAY_MS
+        );
+        streamReconnectTimerId = window.setTimeout(() => {
+          streamReconnectTimerId = null;
+          streamReconnectAttempts += 1;
+          subscribeStream();
+        }, delay);
+      }
+
+      function cleanupEventSource() {
+        if (currentEventSource) {
+          currentEventSource.close();
+          currentEventSource = null;
+        }
+      }
+
+      function arraysEqual(left, right) {
+        if (left.length !== right.length) {
+          return false;
+        }
+        for (let i = 0; i < left.length; i += 1) {
+          if (left[i] !== right[i]) {
+            return false;
+          }
+        }
+        return true;
+      }
 
       const COLOR_GREEN = [46, 204, 113];
       const COLOR_YELLOW = [241, 196, 15];
@@ -403,6 +460,7 @@
 
       deviceSelector.addEventListener("change", (event) => {
         selectedDevice = event.target.value || null;
+        deviceOptionsCache.selected = selectedDevice;
         updateLayoutOptions();
       });
 
@@ -683,7 +741,7 @@
       function updateHeatmap() {
         heatmapContainer.innerHTML = "";
         if (!selectedDevice) {
-          heatmapContainer.innerHTML = `<div class="heatmap-placeholder">选择设备以查看压力分布</div>`;
+          setHeatmapPlaceholder("heatmap.empty.no_device");
           return;
         }
         const entry = state.get(selectedDevice);
@@ -693,7 +751,7 @@
         }
         const layout = parseLayoutKey(selectedLayoutKey);
         if (!layout) {
-          heatmapContainer.innerHTML = `<div class="heatmap-placeholder">请选择行列组合</div>`;
+          setHeatmapPlaceholder("heatmap.empty.no_layout");
           return;
         }
         const [rows, cols] = layout;
@@ -741,7 +799,10 @@
       }
 
       function updateLayoutOptions() {
-        layoutSelector.innerHTML = "";
+        if (!layoutSelector) {
+          return;
+        }
+        const entry = selectedDevice ? state.get(selectedDevice) : null;
         if (mirrorRowsToggle) {
           mirrorRowsToggle.disabled = true;
         }
@@ -749,84 +810,160 @@
           mirrorColsToggle.disabled = true;
         }
         syncMirrorControlsFromState();
-        const entry = selectedDevice ? state.get(selectedDevice) : null;
-        if (!entry || !Number.isInteger(entry.sensorCount) || entry.sensorCount <= 0) {
+        const sensorCount =
+          entry && Number.isInteger(entry.sensorCount) && entry.sensorCount > 0
+            ? entry.sensorCount
+            : null;
+        const languageChanged = layoutOptionsCache.lang !== currentLanguage;
+        const hasValidEntry = Boolean(entry) && sensorCount !== null;
+
+        if (!hasValidEntry) {
+          if (
+            layoutOptionsCache.dn !== null ||
+            layoutOptionsCache.sensorCount !== null ||
+            languageChanged
+          ) {
+            layoutSelector.innerHTML = "";
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = "--";
+            layoutSelector.appendChild(option);
+          }
+          layoutSelector.disabled = true;
+          layoutSelector.value = "";
+          selectedLayoutKey = null;
+          mirrorRows = false;
+          mirrorCols = false;
+          if (mirrorRowsToggle) {
+            mirrorRowsToggle.disabled = true;
+            mirrorRowsToggle.checked = false;
+          }
+          if (mirrorColsToggle) {
+            mirrorColsToggle.disabled = true;
+            mirrorColsToggle.checked = false;
+          }
+          layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
+          setHeatmapPlaceholder("heatmap.empty.no_device");
+          return;
+        }
+
+        const pairs = computeFactorPairs(sensorCount);
+        const optionKeys = pairs.map(([rows, cols]) => `${rows}x${cols}`);
+        if (!optionKeys.length) {
+          layoutSelector.innerHTML = "";
           const option = document.createElement("option");
           option.value = "";
           option.textContent = "--";
           layoutSelector.appendChild(option);
           layoutSelector.disabled = true;
           selectedLayoutKey = null;
-          updateHeatmap();
+          layoutOptionsCache = { dn: entry.dn, sensorCount, options: [], selectedKey: null, lang: currentLanguage };
+          if (mirrorRowsToggle) {
+            mirrorRowsToggle.disabled = true;
+            mirrorRowsToggle.checked = false;
+          }
+          if (mirrorColsToggle) {
+            mirrorColsToggle.disabled = true;
+            mirrorColsToggle.checked = false;
+          }
+          setHeatmapPlaceholder("heatmap.empty.no_layout");
           return;
         }
 
-        const pairs = computeFactorPairs(entry.sensorCount);
-        if (!pairs.length) {
-          const option = document.createElement("option");
-          option.value = "";
-          option.textContent = "--";
-          layoutSelector.appendChild(option);
-          layoutSelector.disabled = true;
-          selectedLayoutKey = null;
-          updateHeatmap();
-          return;
+        const optionsChanged =
+          layoutOptionsCache.dn !== entry.dn ||
+          layoutOptionsCache.sensorCount !== sensorCount ||
+          !arraysEqual(optionKeys, layoutOptionsCache.options) ||
+          languageChanged;
+
+        if (optionsChanged) {
+          layoutSelector.innerHTML = "";
+          pairs.forEach(([rows, cols]) => {
+            const key = `${rows}x${cols}`;
+            const option = document.createElement("option");
+            option.value = key;
+            option.textContent = `${rows} × ${cols}`;
+            layoutSelector.appendChild(option);
+          });
         }
 
-        let defaultKey = chooseDefaultLayout(pairs);
-        const previous = selectedLayoutKey;
-        pairs.forEach(([rows, cols]) => {
-          const key = `${rows}x${cols}`;
-          const option = document.createElement("option");
-          option.value = key;
-          option.textContent = `${rows} × ${cols}`;
-          layoutSelector.appendChild(option);
-        });
+        if (!selectedLayoutKey || !optionKeys.includes(selectedLayoutKey)) {
+          selectedLayoutKey =
+            layoutOptionsCache.selectedKey && optionKeys.includes(layoutOptionsCache.selectedKey)
+              ? layoutOptionsCache.selectedKey
+              : chooseDefaultLayout(pairs);
+        }
 
-        const hasPrevious = previous && pairs.some(([rows, cols]) => `${rows}x${cols}` === previous);
-        selectedLayoutKey = hasPrevious ? previous : defaultKey;
-        layoutSelector.value = selectedLayoutKey || "";
-        layoutSelector.disabled = pairs.length <= 1;
+        layoutSelector.value = selectedLayoutKey;
+        layoutSelector.disabled = false;
+
         if (mirrorRowsToggle) {
           mirrorRowsToggle.disabled = false;
         }
         if (mirrorColsToggle) {
           mirrorColsToggle.disabled = false;
         }
+        syncMirrorControlsFromState();
+
+        layoutOptionsCache = {
+          dn: entry.dn,
+          sensorCount,
+          options: optionKeys,
+          selectedKey: selectedLayoutKey,
+          lang: currentLanguage
+        };
         updateHeatmap();
       }
 
       function updateDeviceOptions() {
-        const previous = selectedDevice;
+        if (!deviceSelector) {
+          return false;
+        }
         const devices = Array.from(state.keys()).sort();
-        deviceSelector.innerHTML = "";
+        const previousSelection = selectedDevice;
+        const listChanged = !arraysEqual(devices, deviceOptionsCache.devices);
+        const languageChanged = deviceOptionsCache.lang !== currentLanguage;
+
         if (!devices.length) {
-          const option = document.createElement("option");
-          option.value = "";
-          option.textContent = t("controls.waiting");
-          deviceSelector.appendChild(option);
+          if (listChanged || languageChanged) {
+            deviceSelector.innerHTML = "";
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = t("controls.waiting");
+            deviceSelector.appendChild(option);
+          }
           deviceSelector.disabled = true;
+          deviceSelector.value = "";
           selectedDevice = null;
-          updateLayoutOptions();
-          return;
+          deviceOptionsCache = { devices, selected: null, lang: currentLanguage };
+          layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null };
+          return listChanged || languageChanged || previousSelection !== null;
         }
 
-        devices.forEach((dn) => {
-          const option = document.createElement("option");
-          option.value = dn;
-          option.textContent = dn;
-          deviceSelector.appendChild(option);
-        });
-
-        if (previous && devices.includes(previous)) {
-          selectedDevice = previous;
-        } else if (!selectedDevice || !devices.includes(selectedDevice)) {
-          selectedDevice = devices[0];
+        if (listChanged || languageChanged) {
+          deviceSelector.innerHTML = "";
+          devices.forEach((dn) => {
+            const option = document.createElement("option");
+            option.value = dn;
+            option.textContent = dn;
+            deviceSelector.appendChild(option);
+          });
         }
 
-        deviceSelector.value = selectedDevice;
+        if (!selectedDevice || !devices.includes(selectedDevice)) {
+          selectedDevice = previousSelection && devices.includes(previousSelection)
+            ? previousSelection
+            : devices[0];
+        }
+
+        if (deviceSelector.value !== selectedDevice) {
+          deviceSelector.value = selectedDevice;
+        }
         deviceSelector.disabled = false;
-        updateLayoutOptions();
+
+        const selectionChanged = selectedDevice !== previousSelection;
+        deviceOptionsCache = { devices, selected: selectedDevice, lang: currentLanguage };
+        return listChanged || languageChanged || selectionChanged;
       }
 
       function updateSummary() {
@@ -841,24 +978,51 @@
             active += 1;
           }
         }
-        document.getElementById("active-devices").textContent = active;
-        document.getElementById("total-pressure").textContent = total.toFixed(2);
+        if (activeDevicesLabel) {
+          activeDevicesLabel.textContent = active;
+        }
+        if (totalPressureLabel) {
+          totalPressureLabel.textContent = total.toFixed(2);
+        }
       }
 
       function updateLastUpdateIndicator() {
-        const lastUpdate = document.getElementById("last-update");
         const latest = Array.from(state.values()).reduce(
           (max, entry) => Math.max(max, entry.receivedAt || 0),
           0
         );
-        lastUpdate.textContent = latest ? new Date(latest).toLocaleString() : "--";
+        if (lastUpdateLabel) {
+          lastUpdateLabel.textContent = latest ? new Date(latest).toLocaleString() : "--";
+        }
+      }
+
+      function performRefresh() {
+        pendingRefresh = false;
+        lastRefreshTimestamp = Date.now();
+        updateSummary();
+        updateTable();
+        const deviceChanged = updateDeviceOptions();
+        if (deviceChanged || selectedDevice !== null) {
+          updateLayoutOptions();
+        }
+        updateLastUpdateIndicator();
       }
 
       function refreshUI() {
-        updateSummary();
-        updateTable();
-        updateDeviceOptions();
-        updateLastUpdateIndicator();
+        pendingRefresh = true;
+        if (refreshTimerId !== null) {
+          return;
+        }
+        const now = Date.now();
+        const elapsed = now - lastRefreshTimestamp;
+        const delay = Math.max(REFRESH_INTERVAL_MS - elapsed, 0);
+        refreshTimerId = window.setTimeout(() => {
+          refreshTimerId = null;
+          if (!pendingRefresh) {
+            return;
+          }
+          performRefresh();
+        }, delay);
       }
 
       function updateTable() {
@@ -901,10 +1065,6 @@
           }
           tbody.appendChild(tr);
         }
-        const parent = tbody.parentElement;
-        if (parent) {
-          parent.scrollTop = 0;
-        }
       }
 
       function removeDevice(dn) {
@@ -915,6 +1075,7 @@
         mirrorSettingsByDevice.delete(dn);
         if (selectedDevice === dn) {
           selectedDevice = null;
+          layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: layoutOptionsCache.lang };
         }
         refreshUI();
       }
@@ -984,18 +1145,30 @@
             refreshUI();
           }
           setStatusIndicator("snapshot_ok");
-          document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-danger");
-          document.getElementById("status-indicator").classList.add("bg-success");
+          if (statusIndicator) {
+            statusIndicator.classList.remove("bg-secondary", "bg-danger");
+            statusIndicator.classList.add("bg-success");
+          }
         } catch (err) {
           setStatusIndicator("snapshot_error");
-          document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-success");
-          document.getElementById("status-indicator").classList.add("bg-danger");
+          if (statusIndicator) {
+            statusIndicator.classList.remove("bg-secondary", "bg-success");
+            statusIndicator.classList.add("bg-danger");
+          }
           console.error(t("console.snapshot_fetch_failed"), err);
         }
       }
 
       function subscribeStream() {
+        cleanupEventSource();
+        clearStreamReconnectTimer();
         const source = new EventSource(STREAM_ENDPOINT);
+        currentEventSource = source;
+        setStatusIndicator("connecting");
+        if (statusIndicator) {
+          statusIndicator.classList.remove("bg-success", "bg-danger", "bg-warning");
+          statusIndicator.classList.add("bg-secondary");
+        }
         source.addEventListener("snapshot", (event) => {
           try {
             const payload = JSON.parse(event.data);
@@ -1015,21 +1188,44 @@
             console.error(t("console.update_event_error"), err);
           }
         });
-        source.addEventListener("error", (event) => {
+        source.addEventListener("error", () => {
           setStatusIndicator("stream_error");
-          document.getElementById("status-indicator").classList.remove("bg-success");
-          document.getElementById("status-indicator").classList.add("bg-warning");
+          if (statusIndicator) {
+            statusIndicator.classList.remove("bg-success");
+            statusIndicator.classList.add("bg-warning");
+          }
+          cleanupEventSource();
+          const shouldFetchSnapshot = streamReconnectTimerId === null;
+          scheduleStreamReconnect();
+          if (shouldFetchSnapshot) {
+            fetchSnapshot();
+          }
         });
         source.onopen = () => {
+          clearStreamReconnectTimer();
+          streamReconnectAttempts = 0;
           setStatusIndicator("stream_ok");
-          document.getElementById("status-indicator").classList.remove("bg-secondary", "bg-danger", "bg-warning");
-          document.getElementById("status-indicator").classList.add("bg-success");
+          if (statusIndicator) {
+            statusIndicator.classList.remove("bg-secondary", "bg-danger", "bg-warning");
+            statusIndicator.classList.add("bg-success");
+          }
         };
       }
 
       applyLanguage();
-      refreshUI();
+      performRefresh();
       fetchSnapshot();
+      if (snapshotPollTimerId === null) {
+        snapshotPollTimerId = window.setInterval(fetchSnapshot, SNAPSHOT_POLL_INTERVAL_MS);
+      }
+      window.addEventListener("beforeunload", () => {
+        cleanupEventSource();
+        clearStreamReconnectTimer();
+        if (snapshotPollTimerId !== null) {
+          window.clearInterval(snapshotPollTimerId);
+          snapshotPollTimerId = null;
+        }
+      });
       subscribeStream();
     </script>
   </body>
