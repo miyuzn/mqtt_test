@@ -888,7 +888,7 @@
             <td>${entry.frameTime ? new Date(entry.frameTime).toLocaleString() : "--"}</td>
             <td>${entry.receivedAt ? new Date(entry.receivedAt).toLocaleString() : "--"}</td>
             <td class="text-center">
-              <button type="button" class="btn btn-sm btn-outline-danger remove-device" data-dn="${entry.dn}">停止监控</button>
+              <button type="button" class="btn btn-sm btn-outline-danger remove-device" data-dn="${entry.dn}">${stopLabel}</button>
             </td>
           `;
           const removeButton = tr.querySelector(".remove-device");
