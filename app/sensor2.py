@@ -1,5 +1,9 @@
 # Sensor v2
 # Comparable with board GCU v3.0 above
+"""
+Helper routines for parsing Sensor v2 binary frames into structured readings.
+Sensor v2 二进制帧解析工具，将底层数据转换为结构化读数。
+"""
 
 import struct
 import csv
@@ -29,6 +33,9 @@ coordinate_y_35_insole = [
 
 # 传感器读数（每帧）
 class SensorData:
+    """Represent a single frame worth of raw + derived sensor values.
+    表示单帧的原始及推导传感器数据。
+    """
     def __init__(self, dn, sn, timestamp, pressure_sensors, magnetometer, gyroscope, accelerometer):
         self.timestamp = timestamp
         self.dn = dn
@@ -68,6 +75,9 @@ class SensorData:
 
 # 传感器数据
 class SensorDataList:
+    """Convenience helpers to extract columns/metrics from SensorData sequences.
+    一组 SensorData 的便捷访问器，提取序列化特征。
+    """
     def __init__(self, sensor_data_list):
         self.sensor_data_list = sensor_data_list
     
@@ -114,6 +124,8 @@ class SensorDataList:
         pressure_x_cop = []
         pressure_y_cop = []
         for i in self.sensor_data_list:
+            # Weighted sum of sensor coordinates to estimate center of pressure.
+            # 通过传感器坐标的加权和估算压力中心。
             for j in range(len(i.pressure_sensors)):
                 weight_coordinate_x = []
                 weight_coordinate_x.append(coordinate_x_35_insole[j] * i.pressure_sensors[j])
@@ -131,7 +143,11 @@ class SensorDataList:
 # ESP32的二进制数据 -> SensorData对象
 # 解析传入的二进制数据，返回SensorData对象
 def parse_sensor_data(data):
-    # 首先检查起始和结束标志是否正确
+    """Parse one binary packet into SensorData or return None when invalid.
+    将单个二进制数据包解析为 SensorData；数据非法时返回 None。
+    """
+    # Verify frame markers before unpacking any payload fields.
+    # 首先检查起始和结束标志是否正确。
     if data[:2] == b'\x5a\x5a' and data[-2:] == b'\xa5\xa5':
         # 解析DN和SN字段
         dn = struct.unpack('BBBBBB', data[2:8])
@@ -162,6 +178,7 @@ def parse_sensor_data(data):
 # SensorData对象列表 -> CSV
 def save_sensor_data_to_csv(sensor_data_list, filename):
     """
+    Group SensorData objects by DN and dump each group into its own CSV file.
     将同一批 SensorData 按 dn 分组分别写入多个 CSV 文件。
     输出文件名 = <输入文件名去掉扩展名>_dn_<DNHEX>.csv
       例如: sensor_data.csv -> sensor_data_dn_E00AD6773866.csv

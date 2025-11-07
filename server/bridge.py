@@ -2,6 +2,9 @@
 
 Subscribes to parsed MQTT topics, keeps the latest payload per DN and pushes
 updates to connected WebSocket (Socket.IO) clients as well as SSE consumers.
+
+MQTT 到 Web 的桥接服务：订阅解析后的主题，缓存每个 DN 的最新数据，
+并同时广播给 Socket.IO 与 SSE 客户端，保证 Web UI 实时刷新。
 """
 
 from __future__ import annotations
@@ -25,6 +28,9 @@ SOCKETIO = SocketIO(APP, cors_allowed_origins="*", async_mode="threading")
 
 
 class BridgeConfig:
+    """Load configuration from file/env so the bridge stays portable.
+    通过文件与环境变量加载配置，保持桥服务可移植。
+    """
     def __init__(self) -> None:
         self.mqtt_host = "mosquitto"
         self.mqtt_port = 1883
@@ -73,11 +79,16 @@ class BridgeConfig:
 
 
 class BridgeService:
+    """Maintain MQTT connectivity, cache latest samples, and fan out updates.
+    负责维持 MQTT 连接、缓存最新数据并向各类客户端分发更新。
+    """
     def __init__(self, cfg: BridgeConfig) -> None:
         self.cfg = cfg
         self._latest_by_dn: Dict[str, Dict[str, Any]] = {}
         self._cache_lock = threading.Lock()
         self._listeners: list[queue.Queue] = []
+        # Registered SSE listeners each own a small queue to receive updates.
+        # 每个注册的 SSE 监听者都会获得一个小型队列，用于缓冲推送数据。
         self._listeners_lock = threading.Lock()
         self._running = threading.Event()
         self._running.set()
@@ -86,6 +97,8 @@ class BridgeService:
     # ------------------------------------------------------------------
     # MQTT handling
     def _create_mqtt_client(self) -> mqtt.Client:
+        # Configure the bare minimum MQTT callbacks for bridge semantics.
+        # 仅配置桥接所需的最小回调，保持实现精简。
         client = mqtt.Client(client_id=self.cfg.client_id, protocol=mqtt.MQTTv311)
         if self.cfg.mqtt_username:
             client.username_pw_set(self.cfg.mqtt_username, self.cfg.mqtt_password)
@@ -121,6 +134,8 @@ class BridgeService:
     def _on_message(self, client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
         payload = self._decode_payload(msg.payload)
         dn = self._extract_dn(msg.topic, payload)
+        # Create a normalized entry so downstream caches/web clients share the same shape.
+        # 生成统一结构的数据项，方便缓存与前端共同复用。
         entry = {
             "dn": dn,
             "topic": msg.topic,
@@ -184,10 +199,14 @@ class BridgeService:
             return self._latest_by_dn.get(dn)
 
     def _broadcast(self, entry: Dict[str, Any]) -> None:
+        # Emit to realtime sockets and queue-based SSE listeners simultaneously.
+        # 同时向实时 Socket 以及基于队列的 SSE 监听者推送最新数据。
         SOCKETIO.emit("update", entry)
         self._push_to_listeners(entry)
 
     def _push_to_listeners(self, entry: Dict[str, Any]) -> None:
+        # Non-blocking push with drop-oldest fallback to keep slow clients alive.
+        # 采用“丢弃最旧数据”策略进行非阻塞推送，防止慢客户端拖垮服务。
         with self._listeners_lock:
             for q in list(self._listeners):
                 try:
@@ -246,6 +265,8 @@ def _format_sse(event: str, data: Any) -> str:
 @APP.get("/stream")
 def stream() -> Response:
     def generate():
+        # Send a snapshot first so browsers have immediate state.
+        # 先推送一次快照，让浏览器立即拥有初始状态。
         yield _format_sse("snapshot", {"data": list(bridge_service.snapshot())})
         listener = bridge_service.register_listener()
         try:
@@ -267,6 +288,8 @@ def handle_socket_connect():
 
 
 def install_signals():
+    # Gracefully stop MQTT loops when receiving termination signals.
+    # 捕获终止信号以优雅关闭 MQTT 循环。
     def _stop(signum, frame):
         print(f"[bridge] stopping (signal {signum})")
         bridge_service.stop()
@@ -281,6 +304,8 @@ def main() -> None:
         "[bridge] starting with broker="
         f"{bridge_config.mqtt_host}:{bridge_config.mqtt_port} topic={bridge_config.mqtt_topic}"
     )
+    # Boot the bridge then hand over to the Socket.IO development server.
+    # 启动桥接逻辑后交给 Socket.IO 开发服务器常驻运行。
     install_signals()
     bridge_service.start()
     try:

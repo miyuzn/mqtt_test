@@ -2,10 +2,16 @@
 """
 MQTT 接收端（JSON 优先，兼容二进制）：
 - 订阅 etx/v1/raw/+（可在 config.ini / 环境变量覆盖）
-- JSON 负载 -> 解析字段 -> 按 <DN>/<YYYYMMDD>/data.csv 追加
+- JSON 负载 -> 解析字段 -> <DN>/<YYYYMMDD>/data.csv 追加
 - 字段名可在 config.ini 中自定义映射
 - 缺失 sn 时，按 pressure 数组长度推断
-- 仍兼容 legacy 二进制帧（5A5A...A5A5 + sensor2.parse_sensor_data）
+- 仍兼容 legacy 二进制帧：A5A...A5A5 + sensor2.parse_sensor_data
+
+MQTT sink that focuses on JSON payloads but still accepts legacy binary frames:
+- Subscribes to etx/v1/raw/+ (config/env overridable)
+- Parses JSON fields and appends rows to <DN>/<YYYYMMDD>/data.csv
+- Field names stay configurable and missing SN falls back to pressure count
+- Legacy binary frames (A5A...A5A5) are parsed via sensor2.parse_sensor_data
 """
 
 import os, sys, csv, json, time, signal, pathlib, configparser
@@ -27,6 +33,8 @@ START = b"\x5a\x5a"
 END   = b"\xa5\xa5"
 
 def extract_frames(payload: bytes):
+    # Iterate through legacy payloads and yield each framed segment.
+    # 遍历旧版负载并逐帧返回被包裹的数据片段。
     i, n = 0, len(payload)
     while True:
         s = payload.find(START, i)
@@ -38,6 +46,9 @@ def extract_frames(payload: bytes):
 
 # ========== 配置读取 ==========
 def load_config() -> dict:
+    """Load sink configuration from defaults + config.ini + environment overrides.
+    从默认值、config.ini 与环境变量叠加加载接收端配置。
+    """
     cfg = {
         "MQTT_BROKER_HOST": "127.0.0.1",
         "MQTT_BROKER_PORT": 1883,
@@ -107,6 +118,9 @@ def dn_to_hex(dn) -> str:
     return dn_bytes.hex().upper()
 
 class CsvHandle:
+    """Manage a per-session CSV file for one DN/day.
+    为同一 DN/日期维护单个 CSV 句柄。
+    """
     def __init__(self, path: pathlib.Path, sn: int, dn_hex: str):
         self.path = path; self.sn = sn; self.dn_hex = dn_hex
         self.f = None; self.writer = None; self.rows_since_flush = 0
@@ -137,6 +151,9 @@ class CsvHandle:
         if self.f: self.f.flush(); self.f.close(); self.f=None; self.writer=None
 
 class StoreManager:
+    """Allocate CSV writers on demand and rotate based on time/session rules.
+    根据时间/会话规则按需分配 CSV 写入句柄。
+    """
     def __init__(self, root_dir, flush_every_rows, inactivity_timeout_sec: int = 5):
         self.root = pathlib.Path(root_dir)
         self.flush_every_rows = flush_every_rows
@@ -173,17 +190,20 @@ class StoreManager:
         if s is None:
             return self._open_new_session(dn_hex, sn, when)
 
-        # 跨天则强制新文件
+        # Rotate the file whenever day changes to keep folders tidy.
+        # 一旦跨天就强制创建新文件，保持目录整洁。
         if s["day"] != day:
             return self._open_new_session(dn_hex, sn, when)
 
-        # 会话空闲超时则新文件（视为新实验）
+        # Treat long idle windows as new experiments -> new file.
+        # 如空闲时间过长，则视为新实验并重启文件。
         last_seen: datetime = s["last_seen"]
         idle = (when - last_seen).total_seconds()
         if idle >= self.inactivity_timeout_sec:
             return self._open_new_session(dn_hex, sn, when)
 
-        # SN 如变化，以新 SN 为准开新文件（避免列数不一致）
+        # Column count depends on SN, so switch files when SN changes.
+        # CSV 列数取决于 SN，发生变化时需切换文件。
         if int(s["sn"]) != int(sn):
             return self._open_new_session(dn_hex, sn, when)
 
@@ -206,6 +226,9 @@ class StoreManager:
 
 # ========== JSON 解析 ==========
 def parse_json_payload(b: bytes, cfg: dict):
+    """Parse MQTT payload that may contain one dict or a list of dicts.
+    解析可能为单对象或对象列表的 MQTT 负载。
+    """
     try:
         obj = json.loads(b.decode("utf-8"))
     except Exception:
@@ -218,6 +241,9 @@ def parse_json_payload(b: bytes, cfg: dict):
     return None
 
 def parse_json_obj(d: dict, cfg: dict):
+    """Project a JSON dict into canonical keys and normalize timestamp units.
+    将 JSON 字典映射为统一字段并归一化时间戳单位。
+    """
     f = lambda k, default=None: d.get(cfg[k], default)
     dn = f("F_DN")
     dn_hex = dn_to_hex(dn)
@@ -247,6 +273,9 @@ def parse_json_obj(d: dict, cfg: dict):
 
 # ========== 主体 ==========
 class MqttSink:
+    """Consume MQTT messages, parse payloads, and persist them onto disk.
+    负责消费 MQTT 消息、解析负载并将结果写入磁盘。
+    """
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.client = mqtt.Client(client_id=cfg["CLIENT_ID"], clean_session=True)
@@ -265,7 +294,8 @@ class MqttSink:
     def on_message(self, client, userdata, msg):
         b = msg.payload or b""
         frames = None
-        # 1) JSON 优先
+        # 1) JSON takes priority because it already matches the CSV schema.
+        # 首选 JSON 负载，因为字段布局与 CSV 完全一致。
         if b[:1] in (b"{", b"["):
             parsed = parse_json_payload(b, self.cfg) or []
             for item in parsed:
@@ -275,7 +305,8 @@ class MqttSink:
                                  item["pressures"], item["mag"], item["gyro"], item["acc"],
                                  when=now_local)
                 self._rx += 1
-        # 2) 兼容旧二进制
+        # 2) Fall back to legacy binary frames when JSON is absent.
+        # 如无 JSON，则兼容旧版二进制帧。
         elif parse_binary_frame is not None:
             frames = list(extract_frames(b))
             for fr in frames:
@@ -291,7 +322,8 @@ class MqttSink:
                                  when=now_local)
                 self._rx += 1
 
-        # 统计
+        # Periodically log ingestion stats for quick health checks.
+        # 定期打印写入统计，便于快速确认运行状态。
         now = time.time()
         if (now - self._last_stat) >= 2.0:
             print(f"[STATS] rows_written={self._rx}")
@@ -310,6 +342,8 @@ class MqttSink:
     def stop(self): self._running = False
 
 def install_signals(app: MqttSink):
+    # Map OS signals to sink.stop so Ctrl+C flushes files gracefully.
+    # 捕获 OS 信号并调用 stop，确保 Ctrl+C 时能优雅关闭文件。
     def _h(sig, frame): app.stop()
     signal.signal(signal.SIGINT, _h)
     if hasattr(signal, "SIGTERM"): signal.signal(signal.SIGTERM, _h)
@@ -317,6 +351,8 @@ def install_signals(app: MqttSink):
 def main():
     cfg = load_config()
     print(f"[CFG] broker={cfg['MQTT_BROKER_HOST']}:{cfg['MQTT_BROKER_PORT']}  sub={cfg['MQTT_SUB_TOPIC']}  root={cfg['ROOT_DIR']}")
+    # Build sink instance, install signal handlers, then block until stop.
+    # 构建 sink 实例并注册信号处理器后进入主循环。
     app = MqttSink(cfg); install_signals(app); app.run()
 
 if __name__ == "__main__":

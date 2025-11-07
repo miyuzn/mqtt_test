@@ -1,4 +1,8 @@
 # data_receive.py — UDP→(可选原始|解析后)→MQTT
+"""
+UDP ingress bridge that optionally republishes raw frames plus parsed JSON over MQTT.
+UDP 接入桥，支持同时转发原始帧与解析后的 JSON 到 MQTT。
+"""
 import os
 import sys
 import configparser
@@ -35,7 +39,9 @@ def _short_mac() -> str:
         return "000000"
 
 def get_conf(section, key, default=None, cast=str):
-    """优先 环境变量(section_key 大写) > config.ini > default"""
+    """Prefer env overrides (SECTION_KEY) over config.ini, falling back to defaults.
+    优先 环境变量(section_key 大写) > config.ini > 默认值。
+    """
     env_key = f"{section}_{key}".upper()
     val = os.getenv(env_key)
     if val is None:
@@ -110,7 +116,9 @@ def make_local_fwd_sock():
     return s
 
 def udp_receiver():
-    """生产者：从UDP收包→有界队列。"""
+    """Producer: receive UDP packets and push them into the bounded queue.
+    生产者：从 UDP 收包并推入有界队列。
+    """
     global pkt_in, pkt_drop
     sock = make_udp_sock()
     fwd = make_local_fwd_sock() if UDP_COPY_LOCAL else None
@@ -158,7 +166,8 @@ def udp_receiver():
 
 def dn_to_hex(dn):
     """
-    将 sensor2.parse_sensor_data 返回的 dn（通常为6字节tuple/bytes）转为大写HEX字符串（用于topic分组）。
+    Normalize the DN (bytes/int/str) into uppercase HEX for topic grouping.
+    将 sensor2.parse_sensor_data 返回的 dn（通常为6字节 tuple/bytes）转为大写 HEX 字符串（用于 topic 分组）。
     """
     if isinstance(dn, (bytes, bytearray)):
         b = bytes(dn)
@@ -176,8 +185,9 @@ def dn_to_hex(dn):
 
 def encode_parsed(sd):
     """
+    Convert sensor2.SensorData into a JSON-serializable dictionary payload.
     将 sensor2.SensorData 转为 JSON 可序列化 dict。
-    字段：
+    字段 (Fields)：
       ts: float 秒（已合成毫秒）
       dn: 大写HEX
       sn: 压力通道数
@@ -197,7 +207,9 @@ def encode_parsed(sd):
     return dn_hex, body
 
 def mqtt_worker():
-    """消费者：从队列取数据→（可选）原始聚合发布 + 解析后 JSON 发布。"""
+    """Consumer: drain queue, emit optional raw batches, and publish parsed JSON.
+    消费者：从队列取数据→（可选）原始聚合发布 + 解析后 JSON 发布。
+    """
     global pkt_pub_raw, pkt_pub_parsed, pkt_parse_err
 
     client = mqtt.Client(client_id=CLIENT_ID, clean_session=True)
@@ -270,6 +282,9 @@ def mqtt_worker():
     print("[BRIDGE/MQTT] worker stopped.")
 
 def stats_printer():
+    """Print moving throughput metrics so we can spot congestion quickly.
+    打印移动窗口吞吐率，便于快速发现拥塞。
+    """
     last = time.time()
     last_in, last_raw, last_parsed, last_drop, last_err = 0, 0, 0, 0, 0
     while running:
@@ -293,6 +308,8 @@ def stats_printer():
 
 def main():
     install_signals()
+    # Spin up UDP/MQTT/stats threads and keep looping until interrupted.
+    # 启动 UDP、MQTT、统计线程并持续运行直到被中断。
     t_recv = threading.Thread(target=udp_receiver, daemon=True)
     t_mqtt = threading.Thread(target=mqtt_worker, daemon=True)
     t_stat = threading.Thread(target=stats_printer, daemon=True)
