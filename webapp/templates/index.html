@@ -14,6 +14,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
   <body>
+    <!-- Main dashboard wrapper: controls header + heatmap + stats -->
+    <!-- 主仪表盘容器：包含头部、热力图与统计信息 -->
     <div class="container py-4">
       <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
@@ -33,6 +35,8 @@
         </div>
       </div>
   
+      <!-- Heatmap + detail cards region -->
+      <!-- 热力图与详情卡片区域 -->
       <div class="row g-4">
         <div class="col-lg-8">
           <div class="card shadow-sm h-100">
@@ -137,6 +141,8 @@
         </div>
       </div>
 
+      <!-- Device table showing latest snapshot per DN -->
+      <!-- 设备表：展示每个 DN 的最新快照 -->
       <div class="card shadow-sm mt-4">
         <div class="card-body">
           <h2 class="h5 mb-3" data-i18n="table.title">设备详情</h2>
@@ -158,7 +164,11 @@
         </div>
       </div>
     </div>
+    <!-- Front-end logic: state management, i18n, SSE subscriptions -->
+    <!-- 前端逻辑：状态管理、多语言与 SSE 订阅 -->
     <script>
+      // Front-end state setup & DOM references. Keeps real-time UI consistent.
+      // 前端状态与 DOM 引用定义，用于维持实时界面一致性。
       const SNAPSHOT_ENDPOINT = "{{ url_for('proxy_latest') }}";
       const STREAM_ENDPOINT = "{{ url_for('proxy_stream') }}";
 
@@ -198,6 +208,8 @@
       let deviceOptionsCache = { devices: [], selected: null, lang: null };
       let layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null };
 
+      // --- Stream lifecycle helpers: manage SSE backoff/retry flow ---
+      // --- 流式连接辅助：管理 SSE 回退与重连流程 ---
       function clearStreamReconnectTimer() {
         if (streamReconnectTimerId !== null) {
           window.clearTimeout(streamReconnectTimerId);
@@ -227,6 +239,8 @@
         }
       }
 
+      // Compare simple arrays for option caching, avoiding unnecessary DOM churn.
+      // 比较简单数组，若相同则避免重复刷新 DOM。
       function arraysEqual(left, right) {
         if (left.length !== right.length) {
           return false;
@@ -388,6 +402,8 @@
       }
       let currentStatusKey = "connecting";
 
+      // --- Internationalization helpers: resolve localized strings on demand ---
+      // --- 多语言辅助：按需解析文案 ---
       function t(key) {
         const pack = TRANSLATIONS[currentLanguage] || TRANSLATIONS.zh;
         if (Object.prototype.hasOwnProperty.call(pack, key)) {
@@ -508,6 +524,8 @@
         });
       }
 
+      // --- Heatmap layout utilities: derive possible row/col pairs ---
+      // --- 热力图布局工具：根据传感器数量推导行列组合 ---
       function computeFactorPairs(sn) {
         if (!Number.isInteger(sn) || sn <= 0) {
           return [];
@@ -738,6 +756,8 @@
         heatmapContainer.innerHTML = `<div class="heatmap-placeholder">${t(key)}</div>`;
       }
 
+      // Render the heatmap SVG + controls based on latest device selection.
+      // 根据当前设备选择渲染热力图 SVG 及控制项。
       function updateHeatmap() {
         heatmapContainer.innerHTML = "";
         if (!selectedDevice) {
@@ -966,6 +986,8 @@
         return listChanged || languageChanged || selectionChanged;
       }
 
+      // --- Dashboard summary (active devices / total pressure) ---
+      // --- 仪表盘概要：活跃设备与总压力 ---
       function updateSummary() {
         const now = Date.now();
         let active = 0;
@@ -1136,6 +1158,8 @@
         refreshUI();
       }
 
+      // Fetch periodic snapshots to guard against SSE hiccups.
+      // 轮询获取快照，防止 SSE 偶发中断导致数据落后。
       async function fetchSnapshot() {
         try {
           const resp = await fetch(SNAPSHOT_ENDPOINT);
@@ -1159,6 +1183,8 @@
         }
       }
 
+      // Subscribe to bridge SSE stream for near real-time updates.
+      // 订阅桥接 SSE 流，实现准实时更新。
       function subscribeStream() {
         cleanupEventSource();
         clearStreamReconnectTimer();
