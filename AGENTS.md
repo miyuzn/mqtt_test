@@ -2,6 +2,8 @@
 
 ## Always respond in Chinese-simplified
 
+## Because the project code contains non-English characters, garbled characters may appear when reading it. This is due to incorrect encoding and does not mean that the final delivered product will also contain garbled characters. If you encounter garbled characters in the source code, please do not modify them; leave them as is.
+
 ## Project Structure & Module Organization
 - `app/`: MQTT clients and utilities (`sink.py`, `sensor2.py`, `publisher.py`), Dockerfile, `requirements.txt`, `config.ini`.
 - `server/`: MQTT↔Web bridge (`bridge.py`).

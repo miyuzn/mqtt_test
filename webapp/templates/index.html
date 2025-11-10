@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="ja">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>实时压力监控面板</title>
+    <title>リアルタイム圧力モニター</title>
 
     <!-- 去掉 integrity / crossorigin -->
     <link
@@ -26,9 +26,9 @@
         </div>
         <div class="text-md-end">
           <div class="btn-group btn-group-sm language-switcher mb-2" role="group" id="language-switcher">
-            <button type="button" class="btn btn-outline-secondary" data-lang="zh">中文</button>
             <button type="button" class="btn btn-outline-secondary" data-lang="ja">日本語</button>
             <button type="button" class="btn btn-outline-secondary" data-lang="en">English</button>
+            <button type="button" class="btn btn-outline-secondary" data-lang="zh">中文</button>
           </div>
           <div class="badge bg-secondary d-block" id="status-indicator" data-i18n="status.connecting">连接中...</div>
           <div class="small text-muted" id="last-update">--</div>
@@ -396,20 +396,20 @@
           "console.update_event_error": "Failed to parse update event"
         }
       };
-      let currentLanguage = localStorage.getItem("uiLanguage") || "zh";
+      let currentLanguage = localStorage.getItem("uiLanguage") || "ja";
       if (!Object.prototype.hasOwnProperty.call(TRANSLATIONS, currentLanguage)) {
-        currentLanguage = "zh";
+        currentLanguage = "ja";
       }
       let currentStatusKey = "connecting";
 
       // --- Internationalization helpers: resolve localized strings on demand ---
       // --- 多语言辅助：按需解析文案 ---
       function t(key) {
-        const pack = TRANSLATIONS[currentLanguage] || TRANSLATIONS.zh;
+        const pack = TRANSLATIONS[currentLanguage] || TRANSLATIONS.ja;
         if (Object.prototype.hasOwnProperty.call(pack, key)) {
           return pack[key];
         }
-        return TRANSLATIONS.zh[key] ?? key;
+        return TRANSLATIONS.ja[key] ?? key;
       }
 
       function updateStatusIndicatorText() {
@@ -434,7 +434,7 @@
       }
 
       function applyLanguage() {
-        const locale = LANGUAGE_META[currentLanguage]?.locale || "zh-CN";
+        const locale = LANGUAGE_META[currentLanguage]?.locale || "ja-JP";
         document.documentElement.lang = locale;
         document.title = t("page.title");
         document.querySelectorAll("[data-i18n]").forEach((el) => {
