@@ -16,6 +16,7 @@ class ConfigResponse(BaseModel):
     status: str
     topic: str
     payload: dict
+    reply: dict | None = None
 
 
 class DeviceItem(BaseModel):
