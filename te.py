@@ -74,4 +74,12 @@ def main():
     args = p.parse_args()
 
     try:
-        resp = send_config(args.host, args.po_
+        resp = send_config(args.host, args.port, args.analog, args.select, args.timeout)
+    except Exception as e:
+        print(f"发送失败：{e}", file=sys.stderr)
+        sys.exit(2)
+
+    print(json.dumps(resp, ensure_ascii=False))
+
+if __name__ == "__main__":
+    main()
