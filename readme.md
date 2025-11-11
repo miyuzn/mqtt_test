@@ -40,8 +40,7 @@ docker compose up -d
 ```
 
 Compose 将自动：
-- 拉取所需镜像（官方 `eclipse-mosquitto` + 自建镜像 `app/`、`webapp/`）；
-- 启动 MQTT Broker；
+- 构建带控制台的 MQTT Broker（整合 mosquitto + FastAPI 配置下发服务）；
 - 启动 Python Client（自动执行 `sink.py` 完成落盘）；
 - 启动 MQTT → Web 桥接服务（`server/bridge.py`）；
 - 启动 Web 前端（`webapp/`，展示实时压力数据）。
@@ -56,6 +55,18 @@ docker ps
 Web 服务会同步订阅 MQTT 数据，并通过 Socket.IO 将压力数据推送至浏览器。默认访问地址：
 
 - http://localhost:5000
+
+### 5️⃣ ESP32 配置下发（开发者控制台）
+
+Broker 容器内新增了一个 FastAPI + 静态前端的“配置控制台”，用于替代手工运行 `te.py`：
+
+- 访问地址：http://localhost:5080
+- 功能：自动列出当前活跃的 ESP32（根据 MQTT 数据流自动感知）、可视化选择 analog / select 并一键下发；
+- 校验：完全复用了 `te.py` 的引脚数量、取值范围、512 字节（含结尾换行）Payload 限制；
+- 图片提示：左侧 IO 示意图引用 `/static/images/pcb-layout.png`，当前提供了 `pcb-layout-placeholder.png`，请将真实 PCB 图替换为同名文件即可；
+- MQTT 下发：向 `esp32/config/{dn}`（可通过 `CONFIG_TOPIC_TEMPLATE` 调整）发布 JSON，使用 retained 消息，设备上线立即获取最新配置。
+
+> 如果需要修改订阅的传感器上行 Topic，可在 `docker-compose.yml` 的 `mosquitto` 服务环境变量里调整 `SENSOR_TOPIC_FILTER`。
 
 若修改了 `MQTT_TOPIC` 或 Broker 地址，可在 `docker-compose.yml` 的 `web` 服务环境变量中调整。
 
@@ -83,6 +94,12 @@ TOPIC_PARSED_PREFIX = etx/v1/parsed
 
 ```text
 .
+├── broker_console/
+│   ├── Dockerfile                     # mosquitto + 配置控制台
+│   ├── app/                           # FastAPI 后端（MQTT 客户端 + API）
+│   ├── frontend/                      # 配置下发前端页面
+│   ├── requirements.txt
+│   └── entrypoint.sh
 ├── app/
 │   ├── Dockerfile
 │   ├── requirements.txt                # Python 客户端依赖（含 bridge 依赖）
@@ -131,6 +148,7 @@ docker compose up -d --build
 - MQTT Broker：tcp://localhost:1883
 - MQTT-Web 桥接：http://localhost:5001
 - Web 可视化：http://localhost:5000
+- 配置下发控制台：http://localhost:5080
 ```
 
 可使用 [MQTTX](https://mqttx.app/) 或命令行工具进行测试 MQTT 消息：
