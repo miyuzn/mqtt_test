@@ -161,6 +161,27 @@ class StoreManager:
         # 按 DN 维护当前会话：dn_hex -> {"day": "YYYYMMDD", "handle": CsvHandle, "last_seen": datetime, "sn": int}
         self.sessions: Dict[str, Dict[str, object]] = {}
 
+    @staticmethod
+    def _resolve_event_time(ts: float, fallback: datetime) -> datetime:
+        """Use payload timestamp when valid; otherwise fall back to ingest time.
+        解析事件时间：优先采用 payload timestamp，不合法时退回接收时间。
+        """
+        event_time: Optional[datetime] = None
+        try:
+            if ts is None:
+                raise ValueError
+            if isinstance(ts, bool):  # bool 是 int 子类，单独剔除
+                raise ValueError
+            if isinstance(ts, (int, float)):
+                if ts != ts or ts in (float("inf"), float("-inf")):
+                    raise ValueError
+                if ts <= 0:
+                    raise ValueError
+                event_time = datetime.fromtimestamp(float(ts), JST)
+        except Exception:
+            event_time = None
+        return event_time or fallback
+
     def _new_handle_path(self, dn_hex: str, when: datetime) -> pathlib.Path:
         day = when.strftime("%Y%m%d")
         now_str = when.strftime("%H%M%S")  # 文件名按时分秒
@@ -199,6 +220,8 @@ class StoreManager:
         # 如空闲时间过长，则视为新实验并重启文件。
         last_seen: datetime = s["last_seen"]
         idle = (when - last_seen).total_seconds()
+        if idle < 0:
+            idle = 0.0
         if idle >= self.inactivity_timeout_sec:
             return self._open_new_session(dn_hex, sn, when)
 
@@ -209,12 +232,13 @@ class StoreManager:
 
         return s["handle"]
 
-    def write(self, dn_hex: str, sn: int, ts: float, pressures, mag, gyro, acc, when: datetime):
-        h = self._get_handle_for_write(dn_hex, sn, when)
+    def write(self, dn_hex: str, sn: int, ts: float, pressures, mag, gyro, acc, ingest_time: datetime):
+        event_time = self._resolve_event_time(ts, ingest_time)
+        h = self._get_handle_for_write(dn_hex, sn, event_time)
         h.write_row(ts, pressures, mag, gyro, acc, self.flush_every_rows)
         # 更新 last_seen
         sess = self.sessions[dn_hex]
-        sess["last_seen"] = when
+        sess["last_seen"] = event_time
 
     def close_all(self):
         for s in self.sessions.values():
@@ -300,10 +324,10 @@ class MqttSink:
             parsed = parse_json_payload(b, self.cfg) or []
             for item in parsed:
                 if not item: continue
-                now_local = datetime.now(JST)
+                ingest_time = datetime.now(JST)
                 self.store.write(item["dn_hex"], item["sn"], item["ts"],
                                  item["pressures"], item["mag"], item["gyro"], item["acc"],
-                                 when=now_local)
+                                 ingest_time=ingest_time)
                 self._rx += 1
         # 2) Fall back to legacy binary frames when JSON is absent.
         # 如无 JSON，则兼容旧版二进制帧。
@@ -316,10 +340,10 @@ class MqttSink:
                     sd = None
                 if not sd: continue
                 dn_hex = dn_to_hex(sd.dn)
-                now_local = datetime.now(JST)
+                ingest_time = datetime.now(JST)
                 self.store.write(dn_hex, int(sd.sn), float(sd.timestamp),
                                  sd.pressure_sensors, sd.magnetometer, sd.gyroscope, sd.accelerometer,
-                                 when=now_local)
+                                 ingest_time=ingest_time)
                 self._rx += 1
 
         # Periodically log ingestion stats for quick health checks.

@@ -150,7 +150,8 @@ def parse_sensor_data(data):
     # 首先检查起始和结束标志是否正确。
     if data[:2] == b'\x5a\x5a' and data[-2:] == b'\xa5\xa5':
         # 解析DN和SN字段
-        dn = struct.unpack('<BBBBBB', data[2:8])
+        value = int.from_bytes(data[2:8], byteorder='little')
+        dn = f"{value:012X}"
         sn = struct.unpack('B', data[8:9])[0]
         # 解析时间戳（4字节整数）
         timestamp = struct.unpack('<I', data[9:13])[0]
