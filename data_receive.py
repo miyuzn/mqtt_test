@@ -181,6 +181,7 @@ def dn_to_hex(dn):
     else:
         # 尽量兜底
         b = bytes(bytearray(dn))
+    b = b[::-1] # 大端转小端
     return b.hex().upper()
 
 def encode_parsed(sd):
