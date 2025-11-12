@@ -15,6 +15,7 @@ MAX_SENSORS = MAX_ANALOG * MAX_SELECT
 PIN_MIN = 0
 PIN_MAX = 255
 PAYLOAD_MAX_BYTES = 512
+VALID_MODELS = {"v2.1", "v2.2.c"}
 
 
 class ConfigValidationError(ValueError):
@@ -37,12 +38,22 @@ def _validate_pins(name: str, pins, limit: int) -> List[int]:
     return values
 
 
-def build_payload(analog, select):
+def _validate_model(value: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigValidationError("缺少 model")
+    model = value.strip()
+    if model not in VALID_MODELS:
+        raise ConfigValidationError(f"model 仅支持: {', '.join(sorted(VALID_MODELS))}")
+    return model
+
+
+def build_payload(analog, select, model):
     analog_list = _validate_pins("analog", analog, MAX_ANALOG)
     select_list = _validate_pins("select", select, MAX_SELECT)
     if len(analog_list) * len(select_list) > MAX_SENSORS:
         raise ConfigValidationError("analog×select 超过 11×13 限制")
-    payload_obj = {"analog": analog_list, "select": select_list}
+    model_value = _validate_model(model)
+    payload_obj = {"analog": analog_list, "select": select_list, "model": model_value}
     payload_str = json.dumps(payload_obj, separators=(",", ":")) + "\n"
     if len(payload_str.encode("utf-8")) > PAYLOAD_MAX_BYTES:
         raise ConfigValidationError("JSON 长度超过 512 字节")
@@ -171,11 +182,12 @@ class ConfigService:
         dn: str,
         analog,
         select,
+        model,
         requested_by: str | None = None,
         target_ip: str | None = None,
     ) -> dict:
         self._connected.wait(timeout=10)
-        payload_obj, _ = build_payload(analog, select)
+        payload_obj, _ = build_payload(analog, select, model)
         command_id = str(uuid.uuid4())
         target_dn = (dn or "").replace(" ", "").replace("-", "").upper()
         body = {
