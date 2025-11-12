@@ -101,18 +101,16 @@ DEVICE_TCP_TIMEOUT = 3.0
 
 ```text
 .
-├── broker_console/
-│   ├── Dockerfile                     # mosquitto + 配置控制台
-│   ├── app/                           # FastAPI 后端（MQTT 客户端 + API）
-│   ├── frontend/                      # 配置下发前端页面
-│   ├── requirements.txt
-│   └── entrypoint.sh
 ├── app/
 │   ├── Dockerfile
 │   ├── requirements.txt                # Python 客户端依赖（含 bridge 依赖）
 │   ├── sink.py                         # 模块4：MQTT 落盘
 │   ├── sensor2.py                      # 数据解析逻辑
 │   └── mqtt_store/                     # CSV 数据存储
+├── mosquitto/
+│   ├── config/mosquitto.conf           # 纯 mosquitto 配置
+│   ├── data/                           # 持久化数据
+│   └── log/                            # 日志输出
 ├── server/
 │   └── bridge.py                       # 模块3/4：MQTT → Web 实时桥接
 ├── webapp/

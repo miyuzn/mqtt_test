@@ -186,8 +186,15 @@ def config_apply() -> Response:
         return jsonify({"error": "invalid_pins", "detail": str(exc)}), 400
     if analog is None or select is None:
         return jsonify({"error": "pins_required"}), 400
+    target_ip = (data.get("target_ip") or data.get("ip") or payload_section.get("target_ip") or "").strip() or None
     try:
-        result = svc.publish_command(dn, analog, select, requested_by=data.get("requested_by"))
+        result = svc.publish_command(
+            dn,
+            analog,
+            select,
+            requested_by=data.get("requested_by"),
+            target_ip=target_ip,
+        )
     except ConfigValidationError as exc:
         return jsonify({"error": "validation_failed", "detail": str(exc)}), 422
     except RuntimeError as exc:

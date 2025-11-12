@@ -166,7 +166,14 @@ class ConfigService:
         with self._lock:
             return list(self._results)
 
-    def publish_command(self, dn: str, analog, select, requested_by: str | None = None) -> dict:
+    def publish_command(
+        self,
+        dn: str,
+        analog,
+        select,
+        requested_by: str | None = None,
+        target_ip: str | None = None,
+    ) -> dict:
         self._connected.wait(timeout=10)
         payload_obj, _ = build_payload(analog, select)
         command_id = str(uuid.uuid4())
@@ -175,12 +182,15 @@ class ConfigService:
             "command_id": command_id,
             "target_dn": target_dn,
             "payload": payload_obj,
-            "requested_by": requested_by,
         }
+        if requested_by:
+            body["requested_by"] = requested_by
+        if target_ip:
+            body["target_ip"] = target_ip
         result = self._client.publish(self._cmd_topic, payload=json.dumps(body, ensure_ascii=False), qos=1)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             raise RuntimeError(f"MQTT 发布失败: {mqtt.error_string(result.rc)}")
-        return {"command_id": command_id, "dn": target_dn, "payload": payload_obj}
+        return {"command_id": command_id, "dn": target_dn, "payload": payload_obj, "target_ip": target_ip}
 
     def stop(self) -> None:
         try:

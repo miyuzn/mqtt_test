@@ -1,23 +1,15 @@
 services:
   mosquitto:
-    build: ./broker_console
+    image: eclipse-mosquitto:2
     container_name: mqtt-broker
     restart: unless-stopped
     ports:
       - "1883:1883"   # MQTT TCP
       - "9001:9001"   # MQTT over WebSocket（可选）
-      - "5080:5080"   # 配置控制台
     volumes:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
-      - ./broker_console/state:/console/state
-    environment:
-      - CONSOLE_PORT=5080
-      - SENSOR_TOPIC_FILTER=etx/v1/parsed/#
-      - CONFIG_TOPIC_TEMPLATE=esp32/config/{dn}
-      - DEVICE_TCP_PORT=22345
-      - DEVICE_TCP_TIMEOUT=3.0
 
   mqttcli:
     image: efrecon/mqtt-client
