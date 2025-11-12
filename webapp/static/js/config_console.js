@@ -180,13 +180,16 @@ function renderHistoryTable() {
     return;
   }
   state.results.forEach((item) => {
-    const statusClass = item.status === 'ok' ? 'status-ok' : 'status-error';
-    const detail = item.status === 'ok' ? JSON.stringify(item.reply || {}) : item.error || '';
+    const replyStatus = (item.reply && item.reply.status) ? String(item.reply.status).toLowerCase() : '';
+    const isOk = replyStatus === 'ok';
+    const statusClass = isOk ? 'status-ok' : 'status-error';
+    const detail = isOk ? JSON.stringify(item.reply || {}) : item.error || JSON.stringify(item.reply || {});
+    const statusLabel = isOk ? 'ok' : 'error';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><span class="font-mono">${formatDateTime(item.timestamp)}</span></td>
       <td><code>${item.dn || ''}</code></td>
-      <td class="${statusClass}">${item.status || '-'}</td>
+      <td class="${statusClass}">${statusLabel}</td>
       <td><code>${detail}</code></td>
     `;
     historyTableBody.appendChild(tr);
@@ -317,4 +320,5 @@ function init() {
 }
 
 init();
+
 

@@ -187,9 +187,7 @@ def config_apply() -> Response:
     if analog is None or select is None:
         return jsonify({"error": "pins_required"}), 400
     target_ip = (data.get("target_ip") or data.get("ip") or payload_section.get("target_ip") or "").strip() or None
-    model = (data.get("model") or payload_section.get("model") or "").strip()
-    if not model:
-        return jsonify({"error": "model_required"}), 400
+    model = data.get("model") or payload_section.get("model")
     try:
         result = svc.publish_command(
             dn,

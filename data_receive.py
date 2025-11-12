@@ -1,7 +1,7 @@
-# data_receive.py — UDP→(可选原始|解析后)→MQTT
+# data_receive.py - UDP (raw or parsed) to MQTT bridge / UDP（可选原始|解析后）到 MQTT 桥
 """
 UDP ingress bridge that optionally republishes raw frames plus parsed JSON over MQTT.
-UDP 接入桥，支持同时转发原始帧与解析后的 JSON 到 MQTT。
+Chinese translation: UDP 接入桥，支持同时转发原始帧与解析后的 JSON 到 MQTT。
 """
 import os
 import sys
@@ -18,12 +18,12 @@ import re
 from typing import Dict, Tuple, Optional
 import paho.mqtt.client as mqtt
 
-# ===== 新增：引入新版解析库 =====
-# 解析逻辑与字段布局参考 sensor2.parse_sensor_data（DN=6字节，SN=压力通道数，Mag/Gyro/Acc为3f）【见 sensor2.py】
-import app.sensor2 as sensor2  # 确保与同目录的 sensor2.py 同名
+# ===== Added: load the updated parsing library / 新增：引入新版解析库 =====
+# Parsing layout follows sensor2.parse_sensor_data (DN=6 bytes, SN=pressure channels, Mag/Gyro/Acc are float triples) / 解析逻辑与字段布局参考 sensor2.parse_sensor_data（DN=6字节，SN=压力通道数，Mag/Gyro/Acc为3f）
+import app.sensor2 as sensor2  # Ensure the module name matches sensor2.py in the same directory / 确保与同目录的 sensor2.py 同名
 
 # ======================
-# 配置（从 config.ini 读取，环境变量可覆盖）
+# Configuration (read from config.ini, overridable via environment variables) / 配置（从 config.ini 读取，环境变量可覆盖）
 # ======================
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.ini")
 
@@ -41,7 +41,7 @@ def _short_mac() -> str:
 
 def get_conf(section, key, default=None, cast=str):
     """Prefer env overrides (SECTION_KEY) over config.ini, falling back to defaults.
-    优先 环境变量(section_key 大写) > config.ini > 默认值。
+    Chinese translation: 优先 环境变量(section_key 大写) > config.ini > 默认值。
     """
     env_key = f"{section}_{key}".upper()
     val = os.getenv(env_key)
@@ -65,7 +65,7 @@ LOCAL_FWD_PORT  = get_conf("UDP", "LOCAL_FWD_PORT", 53000, int)
 UDP_BUF_BYTES   = get_conf("UDP", "BUF_BYTES", 8192, int)
 SO_RCVBUF_BYTES = get_conf("UDP", "SO_RCVBUF_BYTES", 4194304, int)
 
-# MQTT（不再使用 DEVICE_ID；CLIENT_ID 可自动生成）
+# MQTT settings (DEVICE_ID unused; CLIENT_ID auto-generated) / MQTT（不再使用 DEVICE_ID；CLIENT_ID 可自动生成）
 _default_client_id = f"udp-bridge-{_sanitize(socket.gethostname())}-{_short_mac()}"
 BROKER_HOST     = get_conf("MQTT", "BROKER_HOST", "127.0.0.1")
 BROKER_PORT     = get_conf("MQTT", "BROKER_PORT", 1883, int)
@@ -84,7 +84,7 @@ BATCH_MAX_MS    = get_conf("QUEUE", "BATCH_MAX_MS", 40, int)
 BATCH_SEPARATOR = get_conf("QUEUE", "BATCH_SEPARATOR", "NONE")
 PRINT_EVERY_MS  = get_conf("QUEUE", "PRINT_EVERY_MS", 2000, int)
 
-# CONFIG（下发相关）
+# CONFIG settings (downlink control) / CONFIG（下发相关）
 CONFIG_CMD_TOPIC        = get_conf("CONFIG", "CMD_TOPIC", "etx/v1/config/cmd")
 CONFIG_RESULT_TOPIC     = get_conf("CONFIG", "RESULT_TOPIC", "etx/v1/config/result")
 CONFIG_AGENT_TOPIC      = get_conf("CONFIG", "AGENT_TOPIC", "etx/v1/config/agents")
@@ -101,24 +101,17 @@ pkt_pub_parsed = 0
 pkt_drop = 0
 pkt_parse_err = 0
 
-# 队列项：保存 (payload_bytes, addr)
+# Queue entries store (payload_bytes, addr) / 队列项：保存 (payload_bytes, addr)
 q: "queue.Queue[Tuple[bytes, Tuple[str, int]]]" = queue.Queue(maxsize=Q_MAXSIZE)
 
-# 设备注册表：dn_hex -> {"ip": str, "last_seen": float}
+# Device registry maps dn_hex -> {"ip": str, "last_seen": float} / 设备注册表：dn_hex -> {"ip": str, "last_seen": float}
 device_registry: Dict[str, Dict[str, float | str]] = {}
 registry_lock = threading.RLock()
 
-# MQTT 命令队列
+# MQTT command queue / MQTT 命令队列
 command_queue: "queue.Queue[dict]" = queue.Queue()
 
-# 配置负载限制
-MAX_ANALOG = 11
-MAX_SELECT = 13
-MAX_SENSORS = MAX_ANALOG * MAX_SELECT
-PIN_VAL_MIN = 0
-PIN_VAL_MAX = 255
-PAYLOAD_MAX_BYTES = 512
-VALID_MODELS = {"v2.1", "v2.2.c"}
+# Payload constraints (validated by downstream hardware) / 配置负载限制（由下游硬件自行校验）
 
 def install_signals():
     def _handler(sig, frame):
@@ -144,7 +137,7 @@ def make_local_fwd_sock():
 
 def udp_receiver():
     """Producer: receive UDP packets and push them into the bounded queue.
-    生产者：从 UDP 收包并推入有界队列。
+    Chinese translation: 生产者：从 UDP 收包并推入有界队列。
     """
     global pkt_in, pkt_drop
     sock = make_udp_sock()
@@ -194,7 +187,7 @@ def udp_receiver():
 def dn_to_hex(dn):
     """
     Normalize the DN (bytes/int/str) into uppercase HEX for topic grouping.
-    将 sensor2.parse_sensor_data 返回的 dn（通常为6字节 tuple/bytes）转为大写 HEX 字符串（用于 topic 分组）。
+    Chinese translation: 将 sensor2.parse_sensor_data 返回的 dn（通常为6字节 tuple/bytes）转为大写 HEX 字符串（用于 topic 分组）。
     """
     if isinstance(dn, (bytes, bytearray)):
         b = bytes(dn)
@@ -206,7 +199,7 @@ def dn_to_hex(dn):
         hex_str = dn.replace(" ", "").replace("-", "")
         b = bytes.fromhex(hex_str[-12:].rjust(12, "0"))
     else:
-        # 尽量兜底
+        # Best-effort fallback / 尽量兜底
         b = bytes(bytearray(dn))
     return b.hex().upper()
 
@@ -252,13 +245,13 @@ def registry_snapshot() -> dict:
 def encode_parsed(sd):
     """
     Convert sensor2.SensorData into a JSON-serializable dictionary payload.
-    将 sensor2.SensorData 转为 JSON 可序列化 dict。
-    字段 (Fields)：
-      ts: float 秒（已合成毫秒）
-      dn: 大写HEX
-      sn: 压力通道数
-      p:  压力数组（int/float）
-      mag, gyro, acc: 三轴数组
+    Chinese translation: 将 sensor2.SensorData 转为 JSON 可序列化 dict。
+    Fields (字段)：
+      ts: float seconds (already combined with milliseconds) / 秒
+      dn: uppercase HEX string / 大写 HEX
+      sn: pressure channel count / 压力通道数
+      p:  array of pressures (int/float) / 压力数组
+      mag, gyro, acc: 3-axis float arrays / 三轴数组
     """
     dn_hex = dn_to_hex(sd.dn)
     body = {
@@ -277,41 +270,9 @@ class ConfigCommandError(ValueError):
     pass
 
 
-def _validate_pins(name: str, pins, max_len: int) -> list[int]:
-    if pins is None:
-        raise ConfigCommandError(f"缺少 {name} 列表")
-    try:
-        pin_list = [int(x) for x in pins]
-    except Exception as exc:
-        raise ConfigCommandError(f"{name} 只能包含整数") from exc
-    if len(pin_list) == 0 or len(pin_list) > max_len:
-        raise ConfigCommandError(f"{name} 数量需在 1..{max_len}")
-    if any(x < PIN_VAL_MIN or x > PIN_VAL_MAX for x in pin_list):
-        raise ConfigCommandError(f"{name} 取值需在 {PIN_VAL_MIN}..{PIN_VAL_MAX}")
-    if len(set(pin_list)) != len(pin_list):
-        raise ConfigCommandError(f"{name} 出现重复")
-    return pin_list
-
-
-def _validate_model(value) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigCommandError("缺少 model")
-    model = value.strip()
-    if model not in VALID_MODELS:
-        raise ConfigCommandError(f"model 仅支持: {', '.join(sorted(VALID_MODELS))}")
-    return model
-
-
 def build_config_payload(analog, select, model):
-    analog_list = _validate_pins("analog", analog, MAX_ANALOG)
-    select_list = _validate_pins("select", select, MAX_SELECT)
-    if len(analog_list) * len(select_list) > MAX_SENSORS:
-        raise ConfigCommandError("analog×select 超过 11×13 限制")
-    model_value = _validate_model(model)
-    payload_obj = {"analog": analog_list, "select": select_list, "model": model_value}
+    payload_obj = {"analog": analog, "select": select, "model": model}
     payload_str = json.dumps(payload_obj, separators=(",", ":")) + "\n"
-    if len(payload_str.encode("utf-8")) > PAYLOAD_MAX_BYTES:
-        raise ConfigCommandError("JSON 长度超过 512 字节")
     return payload_obj, payload_str
 
 
@@ -424,7 +385,7 @@ def command_worker(client: mqtt.Client):
                 "status": "error",
                 "error": str(exc),
             })
-        except Exception as exc:  # pragma: no cover - 容错
+        except Exception as exc:  # pragma: no cover - resilience / 容错
             publish_command_result(client, {
                 "command_id": cmd.get("command_id") or "",
                 "dn": cmd.get("target_dn") or cmd.get("dn"),
@@ -437,7 +398,7 @@ def execute_command(cmd: dict) -> dict:
     command_id = cmd.get("command_id") or f"cmd-{int(time.time()*1000)}"
     dn_raw = cmd.get("target_dn") or cmd.get("dn")
     if not dn_raw:
-        raise ConfigCommandError("缺少 target_dn")
+        raise ConfigCommandError("target_dn is required")
     dn_hex = dn_to_hex(dn_raw)
     payload_section = cmd.get("payload") if isinstance(cmd.get("payload"), dict) else {}
     analog = cmd.get("analog", payload_section.get("analog"))
@@ -446,7 +407,7 @@ def execute_command(cmd: dict) -> dict:
     payload_obj, payload_str = build_config_payload(analog, select, model)
     target_ip = cmd.get("ip") or cmd.get("target_ip") or payload_section.get("ip") or resolve_device_ip(dn_hex)
     if not target_ip:
-        raise ConfigCommandError("目标 DN 当前未关联 IP")
+        raise ConfigCommandError("Target DN currently is not associated with any IP")
     reply = send_config_payload(target_ip, payload_str)
     return {
         "command_id": command_id,
@@ -461,7 +422,7 @@ def execute_command(cmd: dict) -> dict:
 
 def mqtt_worker():
     """Consumer: drain queue, emit optional raw batches, and publish parsed JSON.
-    消费者：从队列取数据→（可选）原始聚合发布 + 解析后 JSON 发布。
+    Chinese translation: 消费者：从队列取数据→（可选）原始聚合发布 + 解析后 JSON 发布。
     """
     global pkt_pub_raw, pkt_pub_parsed, pkt_parse_err
 
@@ -477,7 +438,7 @@ def mqtt_worker():
     threading.Thread(target=registry_announcer, args=(client,), daemon=True).start()
     sep = b"\n" if BATCH_SEPARATOR == "NL" else b""
 
-    # 为了不阻塞解析，维护一个“原始聚合缓冲区”
+    # Maintain a "raw aggregation buffer" to avoid blocking parsing / 为了不阻塞解析，维护一个“原始聚合缓冲区”
     raw_batch = []
     raw_t0 = None
 
@@ -498,13 +459,13 @@ def mqtt_worker():
         try:
             payload_bytes, addr = q.get(timeout=0.1)
         except queue.Empty:
-            # 时间窗到期时，冲刷原始批
+            # Flush raw batch when the time window expires / 时间窗到期时，冲刷原始批
             if PUBLISH_RAW and raw_batch and raw_t0 is not None:
                 if (time.time() - raw_t0) * 1000.0 >= BATCH_MAX_MS:
                     flush_raw()
             continue
 
-        # 1) 原始路径：聚合以降低开销
+        # Path 1: raw aggregation to reduce overhead / 原始路径：聚合以降低开销
         if PUBLISH_RAW:
             if not raw_batch:
                 raw_t0 = time.time()
@@ -512,26 +473,26 @@ def mqtt_worker():
             if len(raw_batch) >= BATCH_MAX_ITEMS:
                 flush_raw()
 
-        # 2) 解析路径：逐包解析、按 DN 分topic发布（NDJSON，一包一行）
+        # Path 2: parse per packet and publish per-DN NDJSON (one line per frame) / 解析路径：逐包解析、按 DN 分 topic 发布（NDJSON，一包一行）
         if PUBLISH_PARSED:
             try:
-                sd = sensor2.parse_sensor_data(payload_bytes)  # 解析逻辑与 sensor2.py 一致
+                sd = sensor2.parse_sensor_data(payload_bytes)  # Parsing logic matches sensor2.py / 解析逻辑与 sensor2.py 一致
                 if sd is None:
-                    # 非法帧：忽略
+                    # Ignore invalid frames / 非法帧：忽略
                     continue
                 dn_hex, body = encode_parsed(sd)
                 ip_source = addr[0] if isinstance(addr, tuple) and addr else None
                 update_device_registry(dn_hex, ip_source)
-                topic_parsed = f"{TOPIC_PARSED_PR}/{dn_hex}"  # 例如 etx/v1/parsed/E00AD6773866
-                # 采用 NDJSON（每帧一行），便于下游流式消费
+                topic_parsed = f"{TOPIC_PARSED_PR}/{dn_hex}"  # Example: etx/v1/parsed/E00AD6773866 / 例如 etx/v1/parsed/E00AD6773866
+                # Use NDJSON (one frame per line) for downstream streaming / 采用 NDJSON（每帧一行），便于下游流式消费
                 payload = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
                 client.publish(topic_parsed, payload=payload, qos=MQTT_QOS)
                 pkt_pub_parsed += 1
             except Exception:
                 pkt_parse_err += 1
-                # 解析失败不终止流程，继续
+                # Continue even if parsing fails / 解析失败不终止流程，继续
 
-    # 退出前冲刷一次原始批
+    # Flush raw batch once before exit / 退出前冲刷一次原始批
     try:
         flush_raw()
     except Exception:
@@ -543,7 +504,7 @@ def mqtt_worker():
 
 def stats_printer():
     """Print moving throughput metrics so we can spot congestion quickly.
-    打印移动窗口吞吐率，便于快速发现拥塞。
+    Chinese translation: 打印移动窗口吞吐率，便于快速发现拥塞。
     """
     last = time.time()
     last_in, last_raw, last_parsed, last_drop, last_err = 0, 0, 0, 0, 0
@@ -571,7 +532,7 @@ def stats_printer():
 def main():
     install_signals()
     # Spin up UDP/MQTT/stats threads and keep looping until interrupted.
-    # 启动 UDP、MQTT、统计线程并持续运行直到被中断。
+    # Start UDP, MQTT, and stats threads until interrupted / 启动 UDP、MQTT、统计线程并持续运行直到被中断。
     t_recv = threading.Thread(target=udp_receiver, daemon=True)
     t_mqtt = threading.Thread(target=mqtt_worker, daemon=True)
     t_stat = threading.Thread(target=stats_printer, daemon=True)

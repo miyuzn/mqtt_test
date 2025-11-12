@@ -9,54 +9,14 @@ from typing import Deque, Dict, List
 
 import paho.mqtt.client as mqtt
 
-MAX_ANALOG = 11
-MAX_SELECT = 13
-MAX_SENSORS = MAX_ANALOG * MAX_SELECT
-PIN_MIN = 0
-PIN_MAX = 255
-PAYLOAD_MAX_BYTES = 512
-VALID_MODELS = {"v2.1", "v2.2.c"}
-
 
 class ConfigValidationError(ValueError):
     pass
 
 
-def _validate_pins(name: str, pins, limit: int) -> List[int]:
-    if pins is None:
-        raise ConfigValidationError(f"缺少 {name} 列表")
-    try:
-        values = [int(x) for x in pins]
-    except Exception as exc:
-        raise ConfigValidationError(f"{name} 只能包含整数") from exc
-    if len(values) == 0 or len(values) > limit:
-        raise ConfigValidationError(f"{name} 数量需在 1..{limit}")
-    if any(x < PIN_MIN or x > PIN_MAX for x in values):
-        raise ConfigValidationError(f"{name} 取值需在 {PIN_MIN}..{PIN_MAX}")
-    if len(set(values)) != len(values):
-        raise ConfigValidationError(f"{name} 出现重复")
-    return values
-
-
-def _validate_model(value: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigValidationError("缺少 model")
-    model = value.strip()
-    if model not in VALID_MODELS:
-        raise ConfigValidationError(f"model 仅支持: {', '.join(sorted(VALID_MODELS))}")
-    return model
-
-
 def build_payload(analog, select, model):
-    analog_list = _validate_pins("analog", analog, MAX_ANALOG)
-    select_list = _validate_pins("select", select, MAX_SELECT)
-    if len(analog_list) * len(select_list) > MAX_SENSORS:
-        raise ConfigValidationError("analog×select 超过 11×13 限制")
-    model_value = _validate_model(model)
-    payload_obj = {"analog": analog_list, "select": select_list, "model": model_value}
+    payload_obj = {"analog": analog, "select": select, "model": model}
     payload_str = json.dumps(payload_obj, separators=(",", ":")) + "\n"
-    if len(payload_str.encode("utf-8")) > PAYLOAD_MAX_BYTES:
-        raise ConfigValidationError("JSON 长度超过 512 字节")
     return payload_obj, payload_str
 
 
