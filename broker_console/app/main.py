@@ -19,6 +19,7 @@ from .schemas import (
     ConfigResponse,
     DeviceListResponse,
 )
+from .tcp_client import send_payload
 from .validators import ConfigValidationError, build_payload
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -96,17 +97,22 @@ async def apply_config(request: ConfigRequest) -> ConfigResponse:
     except ConfigValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if request.ip:
-        registry.update(dn, ip=request.ip)
+    target_record = registry.get(dn)
+    target_ip = request.ip or (target_record.ip if target_record else None)
+    if not target_ip:
+        raise HTTPException(status_code=422, detail="缺少设备 IP，无法建立 TCP 连接")
 
+    registry.update(dn, ip=target_ip)
+
+    endpoint = f"tcp://{target_ip}:{settings.device_tcp_port}"
     try:
-        topic = mqtt_service.publish_config(dn, payload_str)
-    except Exception as exc:  # pragma: no cover
+        reply = send_payload(target_ip, settings.device_tcp_port, payload_str, settings.device_tcp_timeout)
+    except Exception as exc:
         logger.exception("配置下发失败")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=f"TCP 下发失败: {exc}") from exc
 
-    history_store.append(ConfigRecord.from_payload(dn, payload_obj, topic))
-    return ConfigResponse(status="ok", topic=topic, payload=payload_obj)
+    history_store.append(ConfigRecord.from_payload(dn, payload_obj, endpoint))
+    return ConfigResponse(status="ok", topic=endpoint, payload=payload_obj, reply=reply)
 
 
 __all__ = ["app"]

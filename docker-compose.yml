@@ -16,6 +16,8 @@ services:
       - CONSOLE_PORT=5080
       - SENSOR_TOPIC_FILTER=etx/v1/parsed/#
       - CONFIG_TOPIC_TEMPLATE=esp32/config/{dn}
+      - DEVICE_TCP_PORT=22345
+      - DEVICE_TCP_TIMEOUT=3.0
 
   mqttcli:
     image: efrecon/mqtt-client

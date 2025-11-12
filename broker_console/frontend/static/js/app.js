@@ -135,13 +135,29 @@ async function handleSubmit(event) {
     resultOutput.textContent = "请先选择或输入 DN";
     return;
   }
+  const analogPins = parsePins(analogInput.value);
+  const selectPins = parsePins(selectInput.value);
+  const ip = ipInput.value.trim();
+  if (!ip) {
+    resultOutput.textContent = "请填写设备 IP（或通过列表带出）";
+    return;
+  }
+  if (analogPins.length === 0) {
+    resultOutput.textContent = "analog 列表不能为空";
+    return;
+  }
+  if (selectPins.length === 0) {
+    resultOutput.textContent = "select 列表不能为空";
+    return;
+  }
   const payload = {
     dn,
-    ip: ipInput.value.trim() || undefined,
-    analog: parsePins(analogInput.value),
-    select: parsePins(selectInput.value),
+    ip,
+    analog: analogPins,
+    select: selectPins,
   };
 
+  resultOutput.textContent = "下发中...";
   try {
     const response = await fetch(`${API_BASE}/api/config/apply`, {
       method: "POST",

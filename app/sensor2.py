@@ -150,7 +150,7 @@ def parse_sensor_data(data):
     # 首先检查起始和结束标志是否正确。
     if data[:2] == b'\x5a\x5a' and data[-2:] == b'\xa5\xa5':
         # 解析DN和SN字段
-        dn = struct.unpack('BBBBBB', data[2:8])
+        dn = struct.unpack('<BBBBBB', data[2:8])
         sn = struct.unpack('B', data[8:9])[0]
         # 解析时间戳（4字节整数）
         timestamp = struct.unpack('<I', data[9:13])[0]
@@ -208,7 +208,7 @@ def save_sensor_data_to_csv(sensor_data_list, filename):
             # 若用户在别处把 dn 设成了 int/str，这里也做个兜底
             if isinstance(sd.dn, int):
                 # 将 int 当作 6 字节（大端）截断/填充
-                dn_bytes = sd.dn.to_bytes(6, byteorder="big", signed=False)
+                dn_bytes = sd.dn.to_bytes(6, byteorder="little", signed=False)
             elif isinstance(sd.dn, str):
                 # 允许形如 "E0 0A D6 77 38 66" 或 "E00AD6773866"
                 hex_str = sd.dn.replace(" ", "").replace("-", "")

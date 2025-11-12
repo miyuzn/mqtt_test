@@ -64,9 +64,9 @@ Broker 容器内新增了一个 FastAPI + 静态前端的“配置控制台”�
 - 功能：自动列出当前活跃的 ESP32（根据 MQTT 数据流自动感知）、可视化选择 analog / select 并一键下发；
 - 校验：完全复用了 `te.py` 的引脚数量、取值范围、512 字节（含结尾换行）Payload 限制；
 - 图片提示：左侧 IO 示意图引用 `/static/images/pcb-layout.png`，当前提供了 `pcb-layout-placeholder.png`，请将真实 PCB 图替换为同名文件即可；
-- MQTT 下发：向 `esp32/config/{dn}`（可通过 `CONFIG_TOPIC_TEMPLATE` 调整）发布 JSON，使用 retained 消息，设备上线立即获取最新配置。
+- 下发方式：控制台在收到提交后，会通过 TCP（默认端口 `22345`，可通过 `DEVICE_TCP_PORT` 修改）直接连接到目标 ESP32 的 IP，发送与 `te.py` 相同的 JSON 包并等待回应，再把结果显示在页面上。
 
-> 如果需要修改订阅的传感器上行 Topic，可在 `docker-compose.yml` 的 `mosquitto` 服务环境变量里调整 `SENSOR_TOPIC_FILTER`。
+> 如果需要修改订阅的传感器上行 Topic，可在 `docker-compose.yml` 的 `mosquitto` 服务环境变量里调整 `SENSOR_TOPIC_FILTER`；如需调整 TCP 下发的目标端口或超时，可以配置 `DEVICE_TCP_PORT` / `DEVICE_TCP_TIMEOUT`。
 
 若修改了 `MQTT_TOPIC` 或 Broker 地址，可在 `docker-compose.yml` 的 `web` 服务环境变量中调整。
 
@@ -150,6 +150,8 @@ docker compose up -d --build
 - Web 可视化：http://localhost:5000
 - 配置下发控制台：http://localhost:5080
 ```
+
+> 控制台需要获取设备 IP 才能通过 TCP 下发配置。若在线列表中未显示 IP，请确保设备在上报 MQTT 数据时携带 `ip`（或 `device_ip`、`source_ip`）字段，或者在页面手动填写 IP。
 
 可使用 [MQTTX](https://mqttx.app/) 或命令行工具进行测试 MQTT 消息：
 ```bash

@@ -22,6 +22,8 @@ class Settings:
     state_dir: Path
     allowed_origins: List[str]
     http_port: int
+    device_tcp_port: int
+    device_tcp_timeout: float
 
 
 @lru_cache(maxsize=1)
@@ -48,4 +50,6 @@ def get_settings() -> Settings:
         state_dir=state_dir,
         allowed_origins=allowed_origins or ["*"],
         http_port=int(os.getenv("CONSOLE_PORT", "5080")),
+        device_tcp_port=int(os.getenv("DEVICE_TCP_PORT", "22345")),
+        device_tcp_timeout=float(os.getenv("DEVICE_TCP_TIMEOUT", "3.0")),
     )
