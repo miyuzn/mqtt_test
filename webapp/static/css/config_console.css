@@ -1,0 +1,12 @@
+body {
+  background-color: #f8f9fa;
+}
+
+table td,
+table th {
+  vertical-align: middle;
+}
+
+textarea {
+  font-family: var(--bs-font-monospace, Consolas, 'Courier New', monospace);
+}

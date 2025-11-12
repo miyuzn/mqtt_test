@@ -1,9 +1,21 @@
 import json
 import os
+import sys
+import threading
 from typing import Iterator
 
 import requests
-from flask import Flask, Response, jsonify, render_template, stream_with_context
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    render_template,
+    request,
+    stream_with_context,
+)
+
+from config_backend import ConfigValidationError, build_config_service_from_env
 
 """
 Tiny Flask app that proxies data from the MQTT bridge to the browser UI.
@@ -20,13 +32,43 @@ if BRIDGE_TIMEOUT_READ is not None:
     except ValueError:
         BRIDGE_TIMEOUT_READ = None  # 非法值视为 None（不设读超时）
 
+CONFIG_CONSOLE_PORT = int(os.getenv("CONFIG_CONSOLE_PORT", "5002"))
+CONFIG_CONSOLE_ENABLED = os.getenv("CONFIG_CONSOLE_ENABLED", "1") != "0"
+
 app = Flask(__name__)
+config_app = Flask("config_console", template_folder="templates", static_folder="static")
+
+if CONFIG_CONSOLE_ENABLED:
+    try:
+        config_service = build_config_service_from_env()
+    except Exception as exc:  # pragma: no cover - 初始化容错
+        print(f"[config-web] failed to start MQTT service: {exc}", file=sys.stderr)
+        config_service = None
+else:
+    config_service = None
 
 
 def _bridge_url(path: str) -> str:
     # Build absolute path lazily so deployments can override the base URL.
     # 延迟构建绝对路径，便于不同环境覆写基础地址。
     return f"{BRIDGE_API_BASE_URL.rstrip('/')}{path}"
+
+
+def _require_config_service():
+    if config_service is None:
+        abort(503, description="config service unavailable")
+    return config_service
+
+
+def _parse_pins(value):
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        tokens = [item.strip() for item in value.replace("\n", ",").split(",")]
+        return [int(token) for token in tokens if token]
+    raise ValueError("pin list must be array or comma separated string")
 
 
 @app.route("/")
@@ -105,10 +147,61 @@ def proxy_stream() -> Response:
 
 @app.route("/healthz")
 def healthz() -> Response:
-    return jsonify({"status": "ok", "bridge": BRIDGE_API_BASE_URL})
+    return jsonify({
+        "status": "ok",
+        "bridge": BRIDGE_API_BASE_URL,
+        "config_console": "ready" if config_service else "disabled",
+    })
+
+
+@config_app.route("/")
+def config_index() -> str:
+    return render_template("config_console.html", config_enabled=config_service is not None)
+
+
+@config_app.route("/api/devices")
+def config_devices() -> Response:
+    svc = _require_config_service()
+    return jsonify({"items": svc.list_devices()})
+
+
+@config_app.route("/api/commands/latest")
+def config_results() -> Response:
+    svc = _require_config_service()
+    return jsonify({"items": svc.list_results()})
+
+
+@config_app.route("/api/config/apply", methods=["POST"])
+def config_apply() -> Response:
+    svc = _require_config_service()
+    data = request.get_json(silent=True) or {}
+    dn = (data.get("dn") or data.get("target_dn") or "").strip()
+    if not dn:
+        return jsonify({"error": "dn_required"}), 400
+    payload_section = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+    try:
+        analog = _parse_pins(data.get("analog") if data.get("analog") is not None else payload_section.get("analog"))
+        select = _parse_pins(data.get("select") if data.get("select") is not None else payload_section.get("select"))
+    except Exception as exc:
+        return jsonify({"error": "invalid_pins", "detail": str(exc)}), 400
+    if analog is None or select is None:
+        return jsonify({"error": "pins_required"}), 400
+    try:
+        result = svc.publish_command(dn, analog, select, requested_by=data.get("requested_by"))
+    except ConfigValidationError as exc:
+        return jsonify({"error": "validation_failed", "detail": str(exc)}), 422
+    except RuntimeError as exc:
+        return jsonify({"error": "mqtt_publish_failed", "detail": str(exc)}), 502
+    return jsonify({"status": "queued", **result})
+
+
+def _run_config_console():
+    config_app.run(host="0.0.0.0", port=CONFIG_CONSOLE_PORT, threaded=True, use_reloader=False)
 
 
 if __name__ == "__main__":
     # Run in threaded mode locally so SSE streaming is not blocked.
     # 本地启动时启用多线程，防止单线程阻塞 SSE。
+    if CONFIG_CONSOLE_ENABLED:
+        threading.Thread(target=_run_config_console, name="config-console", daemon=True).start()
     app.run(host="0.0.0.0", port=5000, threaded=True, use_reloader=False)

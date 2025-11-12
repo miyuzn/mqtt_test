@@ -12,7 +12,10 @@ import threading
 import queue
 import time
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+import uuid
+import re
+from typing import Dict, Tuple, Optional
 import paho.mqtt.client as mqtt
 
 # ===== 新增：引入新版解析库 =====
@@ -22,8 +25,6 @@ import app.sensor2 as sensor2  # 确保与同目录的 sensor2.py 同名
 # ======================
 # 配置（从 config.ini 读取，环境变量可覆盖）
 # ======================
-import uuid, re, configparser
-
 CONFIG_PATH = os.getenv("CONFIG_PATH", "config.ini")
 
 config = configparser.ConfigParser()
@@ -83,6 +84,16 @@ BATCH_MAX_MS    = get_conf("QUEUE", "BATCH_MAX_MS", 40, int)
 BATCH_SEPARATOR = get_conf("QUEUE", "BATCH_SEPARATOR", "NONE")
 PRINT_EVERY_MS  = get_conf("QUEUE", "PRINT_EVERY_MS", 2000, int)
 
+# CONFIG（下发相关）
+CONFIG_CMD_TOPIC        = get_conf("CONFIG", "CMD_TOPIC", "etx/v1/config/cmd")
+CONFIG_RESULT_TOPIC     = get_conf("CONFIG", "RESULT_TOPIC", "etx/v1/config/result")
+CONFIG_AGENT_TOPIC      = get_conf("CONFIG", "AGENT_TOPIC", "etx/v1/config/agents")
+CONFIG_AGENT_ID         = get_conf("CONFIG", "AGENT_ID", f"agent-{_short_mac()}")
+DEVICE_TCP_PORT         = get_conf("CONFIG", "DEVICE_TCP_PORT", 22345, int)
+DEVICE_TCP_TIMEOUT      = get_conf("CONFIG", "DEVICE_TCP_TIMEOUT", 3.0, float)
+REGISTRY_TTL            = get_conf("CONFIG", "REGISTRY_TTL", 300, int)
+REGISTRY_PUBLISH_SEC    = get_conf("CONFIG", "REGISTRY_PUBLISH_SEC", 5, int)
+
 running = True
 pkt_in = 0
 pkt_pub_raw = 0
@@ -90,8 +101,23 @@ pkt_pub_parsed = 0
 pkt_drop = 0
 pkt_parse_err = 0
 
-# 队列项：存 bytes，解析在发布线程做（降低主线程负担）
-q: "queue.Queue[bytes]" = queue.Queue(maxsize=Q_MAXSIZE)
+# 队列项：保存 (payload_bytes, addr)
+q: "queue.Queue[Tuple[bytes, Tuple[str, int]]]" = queue.Queue(maxsize=Q_MAXSIZE)
+
+# 设备注册表：dn_hex -> {"ip": str, "last_seen": float}
+device_registry: Dict[str, Dict[str, float | str]] = {}
+registry_lock = threading.RLock()
+
+# MQTT 命令队列
+command_queue: "queue.Queue[dict]" = queue.Queue()
+
+# 配置负载限制
+MAX_ANALOG = 11
+MAX_SELECT = 13
+MAX_SENSORS = MAX_ANALOG * MAX_SELECT
+PIN_VAL_MIN = 0
+PIN_VAL_MAX = 255
+PAYLOAD_MAX_BYTES = 512
 
 def install_signals():
     def _handler(sig, frame):
@@ -145,7 +171,7 @@ def udp_receiver():
         data_bytes = bytes(view[:n])
 
         try:
-            q.put_nowait(data_bytes)
+            q.put_nowait((data_bytes, addr))
         except queue.Full:
             if DROP_POLICY == "drop_oldest":
                 try:
@@ -153,7 +179,7 @@ def udp_receiver():
                 except Exception:
                     pass
                 try:
-                    q.put_nowait(data_bytes)
+                    q.put_nowait((data_bytes, addr))
                 except Exception:
                     pkt_drop += 1
             else:
@@ -184,6 +210,45 @@ def dn_to_hex(dn):
     b = b[::-1] # 大端转小端
     return b.hex().upper()
 
+
+def update_device_registry(dn_hex: str, ip: Optional[str]) -> None:
+    if not dn_hex or not ip:
+        return
+    now = time.time()
+    with registry_lock:
+        device_registry[dn_hex] = {"ip": ip, "last_seen": now}
+
+
+def resolve_device_ip(dn_hex: str) -> Optional[str]:
+    if not dn_hex:
+        return None
+    now = time.time()
+    with registry_lock:
+        entry = device_registry.get(dn_hex)
+        if not entry:
+            return None
+        last_seen = float(entry.get("last_seen", 0))
+        if now - last_seen > REGISTRY_TTL:
+            device_registry.pop(dn_hex, None)
+            return None
+        return entry.get("ip")
+
+
+def registry_snapshot() -> dict:
+    now = time.time()
+    items = []
+    with registry_lock:
+        stale = [dn for dn, rec in device_registry.items() if now - float(rec.get("last_seen", 0)) > REGISTRY_TTL]
+        for dn in stale:
+            device_registry.pop(dn, None)
+        for dn, rec in device_registry.items():
+            items.append({
+                "dn": dn,
+                "ip": rec.get("ip"),
+                "last_seen": datetime.fromtimestamp(float(rec.get("last_seen", now)), timezone.utc).isoformat(),
+            })
+    return {"agent_id": CONFIG_AGENT_ID, "devices": items, "device_count": len(items)}
+
 def encode_parsed(sd):
     """
     Convert sensor2.SensorData into a JSON-serializable dictionary payload.
@@ -207,6 +272,182 @@ def encode_parsed(sd):
     }
     return dn_hex, body
 
+
+class ConfigCommandError(ValueError):
+    pass
+
+
+def _validate_pins(name: str, pins, max_len: int) -> list[int]:
+    if pins is None:
+        raise ConfigCommandError(f"缺少 {name} 列表")
+    try:
+        pin_list = [int(x) for x in pins]
+    except Exception as exc:
+        raise ConfigCommandError(f"{name} 只能包含整数") from exc
+    if len(pin_list) == 0 or len(pin_list) > max_len:
+        raise ConfigCommandError(f"{name} 数量需在 1..{max_len}")
+    if any(x < PIN_VAL_MIN or x > PIN_VAL_MAX for x in pin_list):
+        raise ConfigCommandError(f"{name} 取值需在 {PIN_VAL_MIN}..{PIN_VAL_MAX}")
+    if len(set(pin_list)) != len(pin_list):
+        raise ConfigCommandError(f"{name} 出现重复")
+    return pin_list
+
+
+def build_config_payload(analog, select):
+    analog_list = _validate_pins("analog", analog, MAX_ANALOG)
+    select_list = _validate_pins("select", select, MAX_SELECT)
+    if len(analog_list) * len(select_list) > MAX_SENSORS:
+        raise ConfigCommandError("analog×select 超过 11×13 限制")
+    payload_obj = {"analog": analog_list, "select": select_list}
+    payload_str = json.dumps(payload_obj, separators=(",", ":")) + "\n"
+    if len(payload_str.encode("utf-8")) > PAYLOAD_MAX_BYTES:
+        raise ConfigCommandError("JSON 长度超过 512 字节")
+    return payload_obj, payload_str
+
+
+def send_config_payload(ip: str, payload_str: str) -> dict:
+    addr = (ip, DEVICE_TCP_PORT)
+    with socket.create_connection(addr, timeout=DEVICE_TCP_TIMEOUT) as sock:
+        sock.sendall(payload_str.encode("utf-8"))
+        sock.settimeout(DEVICE_TCP_TIMEOUT)
+        chunks = []
+        while True:
+            try:
+                data = sock.recv(1024)
+            except socket.timeout:
+                break
+            if not data:
+                break
+            chunks.append(data)
+            if data.endswith(b"\n"):
+                break
+    raw_reply = b"".join(chunks).decode("utf-8", errors="replace").strip()
+    if not raw_reply:
+        return {"status": "no-reply"}
+    try:
+        return json.loads(raw_reply)
+    except json.JSONDecodeError:
+        return {"raw": raw_reply}
+
+
+def publish_device_registry(client: mqtt.Client) -> None:
+    topic = f"{CONFIG_AGENT_TOPIC.rstrip('/')}/{CONFIG_AGENT_ID}"
+    snapshot = registry_snapshot()
+    snapshot["timestamp"] = datetime.now(timezone.utc).isoformat()
+    client.publish(topic, payload=json.dumps(snapshot, ensure_ascii=False), qos=1, retain=True)
+
+
+def registry_announcer(client: mqtt.Client):
+    try:
+        publish_device_registry(client)
+    except Exception:
+        print("[CONFIG] failed to publish registry snapshot", file=sys.stderr)
+    interval = max(REGISTRY_PUBLISH_SEC, 1)
+    while running:
+        for _ in range(interval * 10):
+            if not running:
+                break
+            time.sleep(0.1)
+        if not running:
+            break
+        try:
+            publish_device_registry(client)
+        except Exception:
+            print("[CONFIG] failed to publish registry snapshot", file=sys.stderr)
+
+
+def publish_command_result(client: mqtt.Client, payload: dict) -> None:
+    command_id = payload.get("command_id") or ""
+    topic = f"{CONFIG_RESULT_TOPIC.rstrip('/')}/{CONFIG_AGENT_ID}/{command_id or 'unknown'}"
+    body = {
+        "agent_id": CONFIG_AGENT_ID,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    body.update(payload)
+    client.publish(topic, payload=json.dumps(body, ensure_ascii=False), qos=1, retain=False)
+
+
+def on_config_connect(client: mqtt.Client, userdata, flags, rc):
+    if rc != 0:
+        print(f"[CONFIG] MQTT connect failed rc={rc}")
+        return
+    client.subscribe(CONFIG_CMD_TOPIC, qos=1)
+    print(f"[CONFIG] subscribed: {CONFIG_CMD_TOPIC}")
+
+
+def handle_config_command(client: mqtt.Client, userdata, message: mqtt.MQTTMessage):
+    try:
+        obj = json.loads(message.payload.decode("utf-8"))
+    except Exception as exc:
+        publish_command_result(client, {
+            "command_id": "",
+            "status": "error",
+            "error": f"invalid-json: {exc}",
+            "dn": None,
+        })
+        return
+    if not isinstance(obj, dict):
+        publish_command_result(client, {
+            "command_id": obj if isinstance(obj, str) else "",
+            "status": "error",
+            "error": "payload must be JSON object",
+            "dn": None,
+        })
+        return
+    obj.setdefault("_source_topic", message.topic)
+    command_queue.put(obj)
+
+
+def command_worker(client: mqtt.Client):
+    while running:
+        try:
+            cmd = command_queue.get(timeout=0.3)
+        except queue.Empty:
+            continue
+        try:
+            result = execute_command(cmd)
+            publish_command_result(client, result)
+        except ConfigCommandError as exc:
+            publish_command_result(client, {
+                "command_id": cmd.get("command_id") or "",
+                "dn": cmd.get("target_dn") or cmd.get("dn"),
+                "status": "error",
+                "error": str(exc),
+            })
+        except Exception as exc:  # pragma: no cover - 容错
+            publish_command_result(client, {
+                "command_id": cmd.get("command_id") or "",
+                "dn": cmd.get("target_dn") or cmd.get("dn"),
+                "status": "error",
+                "error": f"internal-error: {exc}",
+            })
+
+
+def execute_command(cmd: dict) -> dict:
+    command_id = cmd.get("command_id") or f"cmd-{int(time.time()*1000)}"
+    dn_raw = cmd.get("target_dn") or cmd.get("dn")
+    if not dn_raw:
+        raise ConfigCommandError("缺少 target_dn")
+    dn_hex = dn_to_hex(dn_raw)
+    payload_section = cmd.get("payload") if isinstance(cmd.get("payload"), dict) else {}
+    analog = cmd.get("analog", payload_section.get("analog"))
+    select = cmd.get("select", payload_section.get("select"))
+    payload_obj, payload_str = build_config_payload(analog, select)
+    target_ip = cmd.get("ip") or cmd.get("target_ip") or payload_section.get("ip") or resolve_device_ip(dn_hex)
+    if not target_ip:
+        raise ConfigCommandError("目标 DN 当前未关联 IP")
+    reply = send_config_payload(target_ip, payload_str)
+    return {
+        "command_id": command_id,
+        "dn": dn_hex,
+        "status": "ok",
+        "ip": target_ip,
+        "payload": payload_obj,
+        "reply": reply,
+        "requested_by": cmd.get("requested_by") or payload_section.get("requested_by"),
+        "source_topic": cmd.get("_source_topic"),
+    }
+
 def mqtt_worker():
     """Consumer: drain queue, emit optional raw batches, and publish parsed JSON.
     消费者：从队列取数据→（可选）原始聚合发布 + 解析后 JSON 发布。
@@ -214,10 +455,15 @@ def mqtt_worker():
     global pkt_pub_raw, pkt_pub_parsed, pkt_parse_err
 
     client = mqtt.Client(client_id=CLIENT_ID, clean_session=True)
+    client.on_message = handle_config_command
+    client.on_connect = on_config_connect
     client.connect(BROKER_HOST, BROKER_PORT, keepalive=30)
     client.loop_start()
 
     print(f"[BRIDGE/MQTT] broker={BROKER_HOST}:{BROKER_PORT}, qos={MQTT_QOS}, topics raw={PUBLISH_RAW}, parsed={PUBLISH_PARSED}")
+    print(f"[CONFIG] listening for commands on {CONFIG_CMD_TOPIC}")
+    threading.Thread(target=command_worker, args=(client,), daemon=True).start()
+    threading.Thread(target=registry_announcer, args=(client,), daemon=True).start()
     sep = b"\n" if BATCH_SEPARATOR == "NL" else b""
 
     # 为了不阻塞解析，维护一个“原始聚合缓冲区”
@@ -239,7 +485,7 @@ def mqtt_worker():
 
     while running:
         try:
-            data = q.get(timeout=0.1)
+            payload_bytes, addr = q.get(timeout=0.1)
         except queue.Empty:
             # 时间窗到期时，冲刷原始批
             if PUBLISH_RAW and raw_batch and raw_t0 is not None:
@@ -251,18 +497,20 @@ def mqtt_worker():
         if PUBLISH_RAW:
             if not raw_batch:
                 raw_t0 = time.time()
-            raw_batch.append(data)
+            raw_batch.append(payload_bytes)
             if len(raw_batch) >= BATCH_MAX_ITEMS:
                 flush_raw()
 
         # 2) 解析路径：逐包解析、按 DN 分topic发布（NDJSON，一包一行）
         if PUBLISH_PARSED:
             try:
-                sd = sensor2.parse_sensor_data(data)  # 解析逻辑与 sensor2.py 一致
+                sd = sensor2.parse_sensor_data(payload_bytes)  # 解析逻辑与 sensor2.py 一致
                 if sd is None:
                     # 非法帧：忽略
                     continue
                 dn_hex, body = encode_parsed(sd)
+                ip_source = addr[0] if isinstance(addr, tuple) and addr else None
+                update_device_registry(dn_hex, ip_source)
                 topic_parsed = f"{TOPIC_PARSED_PR}/{dn_hex}"  # 例如 etx/v1/parsed/E00AD6773866
                 # 采用 NDJSON（每帧一行），便于下游流式消费
                 payload = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
@@ -298,12 +546,14 @@ def stats_printer():
         drop_rate = (pkt_drop - last_drop) / dt
         err_rate = (pkt_parse_err - last_err) / dt
         qsize = q.qsize()
+        with registry_lock:
+            dev_count = len(device_registry)
         print(
             f"[STATS] in={pkt_in} ({in_rate:.1f}/s)  "
             f"raw_pub={pkt_pub_raw} ({raw_rate:.1f}/s)  "
             f"parsed_pub={pkt_pub_parsed} ({parsed_rate:.1f}/s)  "
             f"drop={pkt_drop} ({drop_rate:.1f}/s)  "
-            f"parse_err={pkt_parse_err} ({err_rate:.2f}/s)  q={qsize}"
+            f"parse_err={pkt_parse_err} ({err_rate:.2f}/s)  q={qsize}  devices={dev_count}"
         )
         last, last_in, last_raw, last_parsed, last_drop, last_err = now, pkt_in, pkt_pub_raw, pkt_pub_parsed, pkt_drop, pkt_parse_err
 

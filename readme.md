@@ -40,10 +40,10 @@ docker compose up -d
 ```
 
 Compose 将自动：
-- 构建带控制台的 MQTT Broker（整合 mosquitto + FastAPI 配置下发服务）；
+- 构建 MQTT Broker（基于 mosquitto，提供纯粹的消息转发能力）；
 - 启动 Python Client（自动执行 `sink.py` 完成落盘）；
 - 启动 MQTT → Web 桥接服务（`server/bridge.py`）；
-- 启动 Web 前端（`webapp/`，展示实时压力数据）。
+- 启动 Web 前端（`webapp/`，同时提供实时仪表盘与新的配置调试页面）。
 
 启动完成后可查看运行状态：
 ```bash
@@ -56,19 +56,19 @@ Web 服务会同步订阅 MQTT 数据，并通过 Socket.IO 将压力数据推�
 
 - http://localhost:5000
 
-### 5️⃣ ESP32 配置下发（开发者控制台）
+### 5️⃣ ESP32 配置下发（调试控制台）
 
-Broker 容器内新增了一个 FastAPI + 静态前端的“配置控制台”，用于替代手工运行 `te.py`：
+配置下发链路已迁移到 Web 服务，由 Web 端主导指令生成，发送端 `data_receive.py` 负责落地执行：
 
-- 访问地址：http://localhost:5080
-- 功能：自动列出当前活跃的 ESP32（根据 MQTT 数据流自动感知）、可视化选择 analog / select 并一键下发；
-- 校验：完全复用了 `te.py` 的引脚数量、取值范围、512 字节（含结尾换行）Payload 限制；
-- 图片提示：左侧 IO 示意图引用 `/static/images/pcb-layout.png`，当前提供了 `pcb-layout-placeholder.png`，请将真实 PCB 图替换为同名文件即可；
-- 下发方式：控制台在收到提交后，会通过 TCP（默认端口 `22345`，可通过 `DEVICE_TCP_PORT` 修改）直接连接到目标 ESP32 的 IP，发送与 `te.py` 相同的 JSON 包并等待回应，再把结果显示在页面上。
+1. 调试入口：http://localhost:5002（与用户仪表盘 5000 端口隔离，仅供研发使用）。
+2. Web 页面输入 `DN`、analog/select 引脚后，会通过 MQTT 主题 `etx/v1/config/cmd` 发布指令。
+3. 每个发送端实例（运行 `data_receive.py` 的主机）会维护 `DN → IP` 的实时映射，只有持有该 DN 的发送端会响应指令：
+   - 发送端解析 payload，按 `te.py` 的规则校验 analog/select 数量与 512 字节限制；
+   - 通过本地 TCP 连到目标设备（默认端口 `22345`，可在 `config.ini` 的 `[CONFIG]` 段调整），发送 JSON 并等待回包；
+   - 执行结果会发布到 `etx/v1/config/result/<agent_id>/<command_id>`，Web 控制台实时展示发送状态与设备回执。
+4. 发送端还会定期把自身可控的设备列表广播到 `etx/v1/config/agents/<agent_id>`（使用保留消息），Web 控制台据此列出在线 DN、IP 以及最后更新时间。
 
-> 如果需要修改订阅的传感器上行 Topic，可在 `docker-compose.yml` 的 `mosquitto` 服务环境变量里调整 `SENSOR_TOPIC_FILTER`；如需调整 TCP 下发的目标端口或超时，可以配置 `DEVICE_TCP_PORT` / `DEVICE_TCP_TIMEOUT`。
-
-若修改了 `MQTT_TOPIC` 或 Broker 地址，可在 `docker-compose.yml` 的 `web` 服务环境变量中调整。
+> 如需修改主题或 TCP 端口，请参考根目录 `config.ini` 的 `[CONFIG]` 段，或通过环境变量覆盖 `CONFIG_CMD_TOPIC` / `CONFIG_RESULT_TOPIC` / `CONFIG_AGENT_TOPIC` / `DEVICE_TCP_PORT` 等值。
 
 ---
 
@@ -84,6 +84,13 @@ LISTEN_PORT = 13250
 BROKER_HOST = mosquitto
 BROKER_PORT = 1883
 TOPIC_PARSED_PREFIX = etx/v1/parsed
+
+[CONFIG]
+CMD_TOPIC = etx/v1/config/cmd
+RESULT_TOPIC = etx/v1/config/result
+AGENT_TOPIC = etx/v1/config/agents
+DEVICE_TCP_PORT = 22345
+DEVICE_TCP_TIMEOUT = 3.0
 ```
 
 如需连接远程 Broker，请修改 `BROKER_HOST` 为服务器 IP 或域名。
@@ -110,15 +117,32 @@ TOPIC_PARSED_PREFIX = etx/v1/parsed
 │   └── bridge.py                       # 模块3/4：MQTT → Web 实时桥接
 ├── webapp/
 │   ├── Dockerfile
-│   ├── app.py                          # 模块5：Flask Web 可视化
+│   ├── app.py                          # 模块5：Flask Web（仪表盘 + 配置调试）
 │   ├── requirements.txt
-│   ├── templates/index.html            # 可视化界面
-│   └── static/styles.css
+│   ├── config_backend.py               # 配置 MQTT 客户端/状态管理
+│   ├── templates/index.html            # 实时仪表盘
+│   ├── templates/config_console.html   # 调试控制台页面
+│   └── static/                         # 仪表盘 & 调试页资源
 ├── docker-compose.yml                  # 一键部署 docker 配置脚本
 ├── config.ini                          # UDP → MQTT 发送端配置
 ├── data_receive.py                     # 模块2：UDP→MQTT 桥接
 └── README.md
 ```
+
+---
+
+## 🔁 配置下发架构（MQTT 流向）
+
+1. **控制台发出命令**：`webapp` 在端口 `5002` 提供调试页面，提交后会向 `CONFIG_CMD_TOPIC`（默认 `etx/v1/config/cmd`）发布 JSON 指令，包含 `command_id`、`target_dn`、`analog`、`select` 与可选操作者。
+2. **发送端匹配设备**：每个运行 `data_receive.py` 的发送端都会：
+   - 根据收到的 UDP 数据解析 `dn_hex`，维护 `DN → IP` 的缓存；
+   - 周期性地把自身掌握的设备列表推送到 `CONFIG_AGENT_TOPIC/<agent_id>`（默认 `etx/v1/config/agents/<agent_id>`，使用保留消息），供 Web 控制台展示。
+3. **指令执行**：拥有目标 DN 的发送端会：
+   - 按 `te.py` 规则校验 analog/select，并把 payload 透传给目标设备（默认 `TCP :22345`）；
+   - 收集设备回执或错误信息，并在 `CONFIG_RESULT_TOPIC/<agent_id>/<command_id>`（默认 `etx/v1/config/result/...`）上发布执行结果。
+4. **后台收集结果**：`webapp` 内置的 `config_backend` MQTT 客户端会同时订阅 agent 状态与执行结果，刷新调试页面列表，并把响应与失败信息保存 50 条滚动历史。
+
+> 以上三个主题均可通过 `config.ini` 或环境变量（`CONFIG_CMD_TOPIC` 等）覆写。
 
 ---
 
@@ -147,11 +171,11 @@ docker compose up -d --build
 ```
 - MQTT Broker：tcp://localhost:1883
 - MQTT-Web 桥接：http://localhost:5001
-- Web 可视化：http://localhost:5000
-- 配置下发控制台：http://localhost:5080
+- Web 可视化（仪表盘）：http://localhost:5000
+- 配置调试控制台：http://localhost:5002
 ```
 
-> 控制台需要获取设备 IP 才能通过 TCP 下发配置。若在线列表中未显示 IP，请确保设备在上报 MQTT 数据时携带 `ip`（或 `device_ip`、`source_ip`）字段，或者在页面手动填写 IP。
+> 调试控制台需要发送端维护的 DN→IP 映射。若列表中没有目标设备，请确认 `data_receive.py` 与设备之间存在 UDP 流，并等待 1~2 个采样周期让映射刷新。
 
 可使用 [MQTTX](https://mqttx.app/) 或命令行工具进行测试 MQTT 消息：
 ```bash

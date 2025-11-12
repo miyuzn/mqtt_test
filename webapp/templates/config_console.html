@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>调试配置控制台</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="/static/css/config_console.css" />
+  </head>
+  <body>
+    <main class="container py-4">
+      <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+          <h1 class="h3 mb-1">配置调试控制台</h1>
+          <p class="text-muted mb-0">仅供开发调试使用</p>
+        </div>
+        <span class="badge rounded-pill {{ 'bg-success' if config_enabled else 'bg-secondary' }}">
+          {{ '服务可用' if config_enabled else '服务未就绪' }}
+        </span>
+      </div>
+
+      <div id="configAlert" class="alert d-none" role="alert"></div>
+
+      <section class="mb-4">
+        <div class="card shadow-sm">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="h5 mb-0">在线设备</h2>
+            <button id="refreshDevices" class="btn btn-sm btn-outline-primary">刷新</button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle mb-0" id="devicesTable">
+              <thead class="table-light">
+                <tr>
+                  <th>DN</th>
+                  <th>IP</th>
+                  <th>所属发送端</th>
+                  <th>最近更新时间</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="mb-4">
+        <div class="card shadow-sm">
+          <div class="card-header">
+            <h2 class="h5 mb-0">下发配置</h2>
+          </div>
+          <div class="card-body">
+            <form id="configForm" class="row g-3">
+              <div class="col-md-4">
+                <label for="inputDn" class="form-label">目标 DN</label>
+                <input type="text" class="form-control" id="inputDn" name="dn" placeholder="例如 3030F9268608" required />
+              </div>
+              <div class="col-md-4">
+                <label for="inputRequester" class="form-label">操作人（可选）</label>
+                <input type="text" class="form-control" id="inputRequester" name="requested_by" placeholder="your name" />
+              </div>
+              <div class="col-12 col-lg-6">
+                <label for="inputAnalog" class="form-label">analog 引脚</label>
+                <textarea class="form-control" id="inputAnalog" name="analog" rows="3" placeholder="格式：7,6,5,4"></textarea>
+                <div class="form-text">最多 11 个，使用逗号或换行分隔</div>
+              </div>
+              <div class="col-12 col-lg-6">
+                <label for="inputSelect" class="form-label">select 引脚</label>
+                <textarea class="form-control" id="inputSelect" name="select" rows="3" placeholder="格式：42,41,40"></textarea>
+                <div class="form-text">最多 13 个，使用逗号或换行分隔</div>
+              </div>
+              <div class="col-12">
+                <button class="btn btn-primary" type="submit">发送配置</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="card shadow-sm">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="h5 mb-0">下发结果</h2>
+            <button id="refreshResults" class="btn btn-sm btn-outline-secondary">刷新</button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" id="resultsTable">
+              <thead class="table-light">
+                <tr>
+                  <th>时间</th>
+                  <th>DN</th>
+                  <th>状态</th>
+                  <th>发送端</th>
+                  <th>详情</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/js/config_console.js" defer></script>
+  </body>
+</html>
