@@ -1,85 +1,75 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
+﻿<!DOCTYPE html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ESP32 配置调试台</title>
+    <title>ESP32 Configuration Console</title>
     <link rel="stylesheet" href="/static/css/config_console.css" />
   </head>
   <body>
     <header class="app-header">
       <div>
-        <h1>ESP32 配置调试台</h1>
-        <p>通过 MQTT 下发 analog/select，支持发送端自动匹配 DN→IP。</p>
+        <h1>ESP32 Configuration Console</h1>
+        <p>Send analog and select commands to online devices through MQTT.</p>
       </div>
       <div class="header-actions">
-        <button id="refresh-devices" class="ghost-btn" type="button">刷新设备</button>
-        <button id="refresh-results" class="ghost-btn" type="button">刷新结果</button>
+        <button id="refresh-devices" class="ghost-btn" type="button">Refresh Devices</button>
+        <button id="refresh-results" class="ghost-btn" type="button">Refresh History</button>
       </div>
     </header>
 
     <main class="app-main">
       <section class="panel image-panel">
-        <img src="/static/images/pcb-layout-placeholder.png" alt="PCB IO 示意图" />
-        <p class="image-hint">可将真实 PCB 图替换为 <code>static/images/pcb-layout.png</code>。</p>
+        <img id="pcb-preview" src="/static/images/v2.2.c.png" alt="PCB layout preview" />
+        <p class="image-hint">Switch the model selector to preview a different PCB layout.</p>
         <div class="metric-line">
-          <span id="device-count">设备：--</span>
-          <span id="agent-count">发送端：--</span>
+          <span id="device-count">Devices: --</span>
+          <span id="agent-count">Agents: --</span>
         </div>
       </section>
 
       <section class="panel form-panel">
         <form id="config-form">
           <div class="field">
-            <label for="device-select">选择在线设备</label>
+            <label for="device-select">Select an online device</label>
             <div class="device-picker">
               <select id="device-select"></select>
-              <span class="device-meta" id="device-meta">未选择设备</span>
-            </div>
-          </div>
-
-          <div class="field-group">
-            <div class="field">
-              <label for="dn-input">目标 DN</label>
-              <input id="dn-input" placeholder="例如 3030F9268608" />
-            </div>
-            <div class="field">
-              <label for="ip-input">指定 IP（可选）</label>
-              <input id="ip-input" placeholder="通常无需填写" />
+              <span class="device-meta" id="device-meta">No device selected</span>
             </div>
           </div>
 
           <div class="field">
-            <label for="operator-input">操作人 / 备注（可选）</label>
-            <input id="operator-input" placeholder="your name" />
+            <label for="model-select">Select PCB model</label>
+            <select id="model-select">
+              <option value="v2.2.c">v2.2.c</option>
+              <option value="v2.1">v2.1</option>
+            </select>
           </div>
 
           <div class="field">
-            <label>analog（最多 11 个）</label>
+            <label>Analog pins</label>
             <div class="pin-selector">
               <div class="pin-grid" id="analog-grid"></div>
-              <input id="analog-input" placeholder="使用逗号分隔，例如 7,6,5" />
+              <input id="analog-input" type="hidden" />
             </div>
+            <p class="pin-selection" id="analog-selection" data-label="Selected analog pins">Selected analog pins: none</p>
           </div>
 
           <div class="field">
-            <label>select（最多 13 个）</label>
+            <label>Select pins</label>
             <div class="pin-selector">
               <div class="pin-grid" id="select-grid"></div>
-              <input id="select-input" placeholder="例如 42,41,40" />
+              <input id="select-input" type="hidden" />
             </div>
+            <p class="pin-selection" id="select-selection" data-label="Selected select pins">Selected select pins: none</p>
           </div>
 
           <footer class="form-actions">
-            <button type="button" id="clear-form" class="ghost-btn">清空</button>
-            <button type="submit" class="primary-btn">下发配置</button>
+            <button type="button" id="clear-form" class="ghost-btn">Clear</button>
+            <button type="submit" class="primary-btn">Apply Configuration</button>
           </footer>
+          <p class="form-feedback" id="form-feedback" aria-live="polite"></p>
         </form>
-
-        <section class="panel result-panel">
-          <h2>最近一次结果</h2>
-          <pre id="result-output">尚未下发</pre>
-        </section>
       </section>
     </main>
 
@@ -87,8 +77,8 @@
       <div class="panel-block">
         <header class="panel-block-header">
           <div>
-            <h3>在线设备列表</h3>
-            <p>数据来自各发送端的 DN→IP 映射广播。</p>
+            <h3>Online Devices</h3>
+            <p>Data collected from MQTT DN -> IP heartbeats.</p>
           </div>
         </header>
         <div class="table-wrapper">
@@ -97,12 +87,11 @@
               <tr>
                 <th>DN</th>
                 <th>IP</th>
-                <th>发送端</th>
-                <th>最近心跳</th>
+                <th>Last Heartbeat</th>
               </tr>
             </thead>
             <tbody id="devices-table-body">
-              <tr><td colspan="4" class="table-empty">暂无数据</td></tr>
+              <tr><td colspan="3" class="table-empty">No data</td></tr>
             </tbody>
           </table>
         </div>
@@ -111,23 +100,22 @@
       <div class="panel-block">
         <header class="panel-block-header">
           <div>
-            <h3>下发历史</h3>
-            <p>展示最近的执行结果（最多 50 条）。</p>
+            <h3>Command History</h3>
+            <p>Showing the latest 50 configuration pushes.</p>
           </div>
         </header>
         <div class="table-wrapper">
           <table>
             <thead>
               <tr>
-                <th>时间</th>
+                <th>Time</th>
                 <th>DN</th>
-                <th>状态</th>
-                <th>发送端</th>
-                <th>详情</th>
+                <th>Status</th>
+                <th>Details</th>
               </tr>
             </thead>
             <tbody id="history-table-body">
-              <tr><td colspan="5" class="table-empty">暂无数据</td></tr>
+              <tr><td colspan="4" class="table-empty">No data</td></tr>
             </tbody>
           </table>
         </div>

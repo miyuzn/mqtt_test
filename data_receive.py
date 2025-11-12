@@ -118,6 +118,7 @@ MAX_SENSORS = MAX_ANALOG * MAX_SELECT
 PIN_VAL_MIN = 0
 PIN_VAL_MAX = 255
 PAYLOAD_MAX_BYTES = 512
+VALID_MODELS = {"v2.1", "v2.2.c"}
 
 def install_signals():
     def _handler(sig, frame):
@@ -207,7 +208,6 @@ def dn_to_hex(dn):
     else:
         # 尽量兜底
         b = bytes(bytearray(dn))
-    b = b[::-1] # 大端转小端
     return b.hex().upper()
 
 
@@ -293,12 +293,22 @@ def _validate_pins(name: str, pins, max_len: int) -> list[int]:
     return pin_list
 
 
-def build_config_payload(analog, select):
+def _validate_model(value) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigCommandError("缺少 model")
+    model = value.strip()
+    if model not in VALID_MODELS:
+        raise ConfigCommandError(f"model 仅支持: {', '.join(sorted(VALID_MODELS))}")
+    return model
+
+
+def build_config_payload(analog, select, model):
     analog_list = _validate_pins("analog", analog, MAX_ANALOG)
     select_list = _validate_pins("select", select, MAX_SELECT)
     if len(analog_list) * len(select_list) > MAX_SENSORS:
         raise ConfigCommandError("analog×select 超过 11×13 限制")
-    payload_obj = {"analog": analog_list, "select": select_list}
+    model_value = _validate_model(model)
+    payload_obj = {"analog": analog_list, "select": select_list, "model": model_value}
     payload_str = json.dumps(payload_obj, separators=(",", ":")) + "\n"
     if len(payload_str.encode("utf-8")) > PAYLOAD_MAX_BYTES:
         raise ConfigCommandError("JSON 长度超过 512 字节")
@@ -432,7 +442,8 @@ def execute_command(cmd: dict) -> dict:
     payload_section = cmd.get("payload") if isinstance(cmd.get("payload"), dict) else {}
     analog = cmd.get("analog", payload_section.get("analog"))
     select = cmd.get("select", payload_section.get("select"))
-    payload_obj, payload_str = build_config_payload(analog, select)
+    model = cmd.get("model", payload_section.get("model"))
+    payload_obj, payload_str = build_config_payload(analog, select, model)
     target_ip = cmd.get("ip") or cmd.get("target_ip") or payload_section.get("ip") or resolve_device_ip(dn_hex)
     if not target_ip:
         raise ConfigCommandError("目标 DN 当前未关联 IP")
