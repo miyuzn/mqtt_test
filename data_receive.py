@@ -1,7 +1,7 @@
 # data_receive.py - UDP (raw or parsed) to MQTT bridge / UDP（可选原始|解析后）到 MQTT 桥
 """
 UDP ingress bridge that optionally republishes raw frames plus parsed JSON over MQTT.
-Chinese translation: UDP 接入桥，支持同时转发原始帧与解析后的 JSON 到 MQTT。
+UDP 接入桥，支持同时转发原始帧与解析后的 JSON 到 MQTT。
 """
 import os
 import sys
@@ -41,7 +41,7 @@ def _short_mac() -> str:
 
 def get_conf(section, key, default=None, cast=str):
     """Prefer env overrides (SECTION_KEY) over config.ini, falling back to defaults.
-    Chinese translation: 优先 环境变量(section_key 大写) > config.ini > 默认值。
+    优先 环境变量(section_key 大写) > config.ini > 默认值。
     """
     env_key = f"{section}_{key}".upper()
     val = os.getenv(env_key)
@@ -137,7 +137,7 @@ def make_local_fwd_sock():
 
 def udp_receiver():
     """Producer: receive UDP packets and push them into the bounded queue.
-    Chinese translation: 生产者：从 UDP 收包并推入有界队列。
+    生产者：从 UDP 收包并推入有界队列。
     """
     global pkt_in, pkt_drop
     sock = make_udp_sock()
@@ -187,7 +187,7 @@ def udp_receiver():
 def dn_to_hex(dn):
     """
     Normalize the DN (bytes/int/str) into uppercase HEX for topic grouping.
-    Chinese translation: 将 sensor2.parse_sensor_data 返回的 dn（通常为6字节 tuple/bytes）转为大写 HEX 字符串（用于 topic 分组）。
+    将 sensor2.parse_sensor_data 返回的 dn（通常为6字节 tuple/bytes）转为大写 HEX 字符串（用于 topic 分组）。
     """
     if isinstance(dn, (bytes, bytearray)):
         b = bytes(dn)
@@ -245,7 +245,7 @@ def registry_snapshot() -> dict:
 def encode_parsed(sd):
     """
     Convert sensor2.SensorData into a JSON-serializable dictionary payload.
-    Chinese translation: 将 sensor2.SensorData 转为 JSON 可序列化 dict。
+    将 sensor2.SensorData 转为 JSON 可序列化 dict。
     Fields (字段)：
       ts: float seconds (already combined with milliseconds) / 秒
       dn: uppercase HEX string / 大写 HEX
@@ -422,7 +422,7 @@ def execute_command(cmd: dict) -> dict:
 
 def mqtt_worker():
     """Consumer: drain queue, emit optional raw batches, and publish parsed JSON.
-    Chinese translation: 消费者：从队列取数据→（可选）原始聚合发布 + 解析后 JSON 发布。
+    消费者：从队列取数据→（可选）原始聚合发布 + 解析后 JSON 发布。
     """
     global pkt_pub_raw, pkt_pub_parsed, pkt_parse_err
 
@@ -504,7 +504,7 @@ def mqtt_worker():
 
 def stats_printer():
     """Print moving throughput metrics so we can spot congestion quickly.
-    Chinese translation: 打印移动窗口吞吐率，便于快速发现拥塞。
+    打印移动窗口吞吐率，便于快速发现拥塞。
     """
     last = time.time()
     last_in, last_raw, last_parsed, last_drop, last_err = 0, 0, 0, 0, 0

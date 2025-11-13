@@ -132,10 +132,6 @@
                 <div class="fw-semibold" data-i18n="overview.active_devices">活跃设备</div>
                 <div class="display-6" id="active-devices">0</div>
               </div>
-              <div>
-                <div class="fw-semibold" data-i18n="overview.total_pressure">总压力</div>
-                <div class="display-6" id="total-pressure">0</div>
-              </div>
             </div>
           </div>
         </div>
@@ -152,7 +148,6 @@
                 <tr>
                   <th scope="col" data-i18n="table.headers.dn">DN</th>
                   <th scope="col" data-i18n="table.headers.count">压力传感器数</th>
-                  <th scope="col" data-i18n="table.headers.sum">压力总和</th>
                   <th scope="col" data-i18n="table.headers.frame_time">最新帧时间</th>
                   <th scope="col" data-i18n="table.headers.receive_time">接收时间</th>
                   <th scope="col" class="text-center" data-i18n="table.headers.actions">操作</th>
@@ -185,7 +180,6 @@
       const mirrorColsToggle = document.getElementById("mirror-cols");
       const statusIndicator = document.getElementById("status-indicator");
       const activeDevicesLabel = document.getElementById("active-devices");
-      const totalPressureLabel = document.getElementById("total-pressure");
       const lastUpdateLabel = document.getElementById("last-update");
       const languageButtons = document.querySelectorAll("#language-switcher [data-lang]");
       let selectedDevice = null;
@@ -211,20 +205,25 @@
       // --- Stream lifecycle helpers: manage SSE backoff/retry flow ---
       // --- 流式连接辅助：管理 SSE 回退与重连流程 ---
       function clearStreamReconnectTimer() {
+        // Skip cleanup when no reconnect delay is scheduled / 若未安排重连则无需清理
         if (streamReconnectTimerId !== null) {
+          // Cancel pending reconnect to avoid duplicated timers / 取消等待中的重连以避免重复定时器
           window.clearTimeout(streamReconnectTimerId);
           streamReconnectTimerId = null;
         }
       }
 
       function scheduleStreamReconnect() {
+        // Avoid stacking multiple reconnect timers / 避免堆叠多个重连定时器
         if (streamReconnectTimerId !== null) {
           return;
         }
+        // Use exponential backoff but clamp to max delay / 采用指数退避并限制最大延迟
         const delay = Math.min(
           STREAM_RECONNECT_BASE_DELAY_MS * Math.max(1, Math.pow(2, streamReconnectAttempts)),
           STREAM_RECONNECT_MAX_DELAY_MS
         );
+        // Schedule the retry and track attempt count / 设定重连任务并跟踪尝试次数
         streamReconnectTimerId = window.setTimeout(() => {
           streamReconnectTimerId = null;
           streamReconnectAttempts += 1;
@@ -233,6 +232,7 @@
       }
 
       function cleanupEventSource() {
+        // Close the EventSource gently to release network resources / 温和关闭 EventSource 以释放网络资源
         if (currentEventSource) {
           currentEventSource.close();
           currentEventSource = null;
@@ -242,14 +242,17 @@
       // Compare simple arrays for option caching, avoiding unnecessary DOM churn.
       // 比较简单数组，若相同则避免重复刷新 DOM。
       function arraysEqual(left, right) {
+        // Quick length check before comparing individual entries / 在逐项比较前先快速比长度
         if (left.length !== right.length) {
           return false;
         }
+        // Compare element by element to detect any difference / 按元素比较以捕捉差异
         for (let i = 0; i < left.length; i += 1) {
           if (left[i] !== right[i]) {
             return false;
           }
         }
+        // All entries match, arrays are effectively identical / 所有元素一致，视为相同数组
         return true;
       }
 
@@ -405,26 +408,32 @@
       // --- Internationalization helpers: resolve localized strings on demand ---
       // --- 多语言辅助：按需解析文案 ---
       function t(key) {
+        // Resolve translation pack based on current language / 根据当前语言选择翻译包
         const pack = TRANSLATIONS[currentLanguage] || TRANSLATIONS.ja;
         if (Object.prototype.hasOwnProperty.call(pack, key)) {
           return pack[key];
         }
+        // Fallback to Japanese pack or raw key if missing / 若缺失则回退到日文或直接返回 key
         return TRANSLATIONS.ja[key] ?? key;
       }
 
       function updateStatusIndicatorText() {
+        // Indicator may not exist in minimal layouts / 精简布局可能没有状态指示器
         if (!statusIndicator) {
           return;
         }
+        // Refresh the DOM label using localized text / 使用本地化文本刷新指示器
         statusIndicator.textContent = t(`status.${currentStatusKey}`);
       }
 
       function setStatusIndicator(stateKey) {
+        // Persist key to drive follow-up updates / 保存状态键以驱动后续刷新
         currentStatusKey = stateKey;
         updateStatusIndicatorText();
       }
 
       function updateLanguageSwitcherState() {
+        // Toggle active button styling to reflect selection / 切换按钮样式以反映当前语言
         languageButtons.forEach((button) => {
           const isActive = button.dataset.lang === currentLanguage;
           button.classList.toggle("btn-primary", isActive);
@@ -434,9 +443,11 @@
       }
 
       function applyLanguage() {
+        // Update document metadata for assistive tech / 更新文档语言信息以便辅助工具
         const locale = LANGUAGE_META[currentLanguage]?.locale || "ja-JP";
         document.documentElement.lang = locale;
         document.title = t("page.title");
+        // Replace text content for all data-i18n nodes / 为所有 data-i18n 节点替换文本
         document.querySelectorAll("[data-i18n]").forEach((el) => {
           const key = el.dataset.i18n;
           if (!key) return;
@@ -445,6 +456,7 @@
             el.textContent = translation;
           }
         });
+        // Sync placeholder attributes since they don't use textContent / 同步 placeholder 属性因为它们不走 textContent
         document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
           const key = el.dataset.i18nPlaceholder;
           if (!key) return;
@@ -453,15 +465,18 @@
             el.setAttribute("placeholder", translation);
           }
         });
+        // Dependent UI (status, buttons, inputs) also need refresh / 依赖语言的状态、按钮与输入框同样需要刷新
         updateStatusIndicatorText();
         updateLanguageSwitcherState();
         updateRangePlaceholders(null, null);
       }
 
       function setLanguage(lang) {
+        // Ignore unknown locales to avoid corrupting storage / 忽略未知语言以免破坏存储
         if (!Object.prototype.hasOwnProperty.call(TRANSLATIONS, lang)) {
           return;
         }
+        // Persist selection and re-render UI / 记录选择并重新渲染界面
         currentLanguage = lang;
         localStorage.setItem("uiLanguage", lang);
         applyLanguage();
@@ -527,23 +542,27 @@
       // --- Heatmap layout utilities: derive possible row/col pairs ---
       // --- 热力图布局工具：根据传感器数量推导行列组合 ---
       function computeFactorPairs(sn) {
+        // Reject invalid sensor counts before factoring / 先排除无效的传感器数量
         if (!Number.isInteger(sn) || sn <= 0) {
           return [];
         }
         const basePairs = [];
         const limit = Math.floor(Math.sqrt(sn));
+        // Enumerate divisors up to sqrt to gather row/column pairs / 遍历平方根范围内的因子以获取行列组合
         for (let i = 1; i <= limit; i += 1) {
           if (sn % i === 0) {
             basePairs.push([i, sn / i]);
           }
         }
         const pairs = [];
+        // Include mirrored pairs so users can swap rows/cols / 包含镜像组合便于用户交换行列
         basePairs.forEach(([rows, cols]) => {
           pairs.push([rows, cols]);
           if (rows !== cols) {
             pairs.push([cols, rows]);
           }
         });
+        // Prefer near-square layouts, then smaller sizes / 优先接近方阵的布局，其次按尺寸排序
         pairs.sort((a, b) => {
           const diffA = Math.abs(a[0] - a[1]);
           const diffB = Math.abs(b[0] - b[1]);
@@ -555,6 +574,7 @@
       }
 
       function chooseDefaultLayout(pairs) {
+        // Use first sorted candidate as default / 使用排序后的首个候选作为默认布局
         if (!pairs.length) {
           return null;
         }
@@ -562,6 +582,7 @@
       }
 
       function parseLayoutKey(key) {
+        // Layout keys look like \"8x16\"; split and coerce / 布局键形如 \"8x16\"，需拆分并转数字
         if (!key) {
           return null;
         }
@@ -573,9 +594,11 @@
       }
 
       function handleCustomRangeChange() {
+        // Without inputs there's nothing to validate / 若缺少输入元素则无需校验
         if (!pressureMinInput || !pressureMaxInput) {
           return;
         }
+        // Pull raw strings once for consistent handling / 读取原始字符串以便统一处理
         const rawMin = pressureMinInput.value.trim();
         const rawMax = pressureMaxInput.value.trim();
         const hasMin = rawMin !== "";
@@ -588,6 +611,7 @@
         pressureMinInput.classList.remove("is-invalid");
         pressureMaxInput.classList.remove("is-invalid");
 
+        // Reject invalid numeric input and reset custom overrides / 遇到非法数字时重置自定义范围
         if (!minValid || !maxValid) {
           if (!minValid) {
             pressureMinInput.classList.add("is-invalid");
@@ -602,6 +626,7 @@
         }
 
         if (hasMin && hasMax) {
+          // Only accept range when min < max / 仅在最小值小于最大值时接受
           if (minValue < maxValue) {
             customRangeMin = minValue;
             customRangeMax = maxValue;
@@ -614,6 +639,7 @@
             return;
           }
         } else {
+          // Missing either bound means we fall back to auto range / 缺少任一边界则回退到自动范围
           customRangeMin = null;
           customRangeMax = null;
         }
@@ -622,16 +648,17 @@
       }
 
       function updateRangePlaceholders(dataMin, dataMax) {
+        // Show current data-derived defaults, else language-specific placeholder / 优先展示数据推导的默认值，否则使用多语言占位符
         if (pressureMinInput) {
           if (Number.isFinite(dataMin)) {
-            pressureMinInput.placeholder = dataMin.toFixed(2);
+            pressureMinInput.placeholder = dataMin;
           } else {
             pressureMinInput.placeholder = t("inputs.placeholder.lower");
           }
         }
         if (pressureMaxInput) {
           if (Number.isFinite(dataMax)) {
-            pressureMaxInput.placeholder = dataMax.toFixed(2);
+            pressureMaxInput.placeholder = dataMax;
           } else {
             pressureMaxInput.placeholder = t("inputs.placeholder.upper");
           }
@@ -639,6 +666,7 @@
       }
 
       function resolveEffectiveRange(dataMin, dataMax) {
+        // User-defined bounds win when valid / 若用户自定义范围有效则使用之
         if (
           Number.isFinite(customRangeMin) &&
           Number.isFinite(customRangeMax) &&
@@ -646,6 +674,7 @@
         ) {
           return { min: customRangeMin, max: customRangeMax };
         }
+        // Otherwise fall back to data-driven min/max when available / 否则回退到数据驱动的上下限
         if (Number.isFinite(dataMin) && Number.isFinite(dataMax)) {
           return { min: dataMin, max: dataMax };
         }
@@ -653,16 +682,19 @@
       }
 
       function toRgbString(color) {
+        // Convert [r,g,b] tuple into CSS color string / 将 [r,g,b] 数组转换成 CSS 颜色字符串
         return `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
       }
 
       function interpolateGradient(stops, ratio) {
+        // Clamp ratio to [0,1] before interpolation / 插值前先将比值限制在 [0,1]
         const clamped = Math.min(1, Math.max(0, ratio));
         for (let i = 1; i < stops.length; i += 1) {
           if (clamped <= stops[i].stop) {
             const prev = stops[i - 1];
             const next = stops[i];
             const span = next.stop - prev.stop || 1;
+            // Interpolate each color channel independently / 对每个颜色通道分别进行插值
             const localT = span === 0 ? 0 : (clamped - prev.stop) / span;
             const r = Math.round(prev.color[0] + (next.color[0] - prev.color[0]) * localT);
             const g = Math.round(prev.color[1] + (next.color[1] - prev.color[1]) * localT);
@@ -670,27 +702,33 @@
             return `rgb(${r}, ${g}, ${b})`;
           }
         }
+        // If ratio beyond last stop, stick to final color / 若超出最后节点则直接返回末尾颜色
         const last = stops[stops.length - 1];
         return `rgb(${last.color[0]}, ${last.color[1]}, ${last.color[2]})`;
       }
 
       function computeValueRatio(value, min, max) {
+        // Guard against invalid numbers and degenerate ranges / 先排除无效数字或相等边界
         if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || min === max) {
           return null;
         }
+        // Snap to bounds when value is outside / 当值越界时直接归到上下限
         if (value <= min) {
           return 0;
         }
         if (value >= max) {
           return 1;
         }
+        // Normalize within [0,1] for downstream coloring / 将区间映射到 [0,1] 便于着色
         return (value - min) / (max - min);
       }
 
       function valueToColor(value, min, max) {
+        // Empty cells use muted gray / 缺失值使用灰色
         if (!Number.isFinite(value)) {
           return "#dee2e6";
         }
+        // Without a valid range, default to base green / 没有有效范围时使用基础绿色
         if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
           return toRgbString(COLOR_GREEN);
         }
@@ -700,28 +738,39 @@
         if (value >= max) {
           return toRgbString(COLOR_RED);
         }
+        // Map value into gradient spectrum / 将数值映射到渐变色谱
         const ratio = (value - min) / (max - min);
         return interpolateGradient(GRADIENT_STOPS, ratio);
       }
 
       function valueToTextColor(value, min, max) {
+        // Default to dark text when ratio cannot be computed / 无法计算比值时默认使用深色字体
         const ratio = computeValueRatio(value, min, max);
         if (ratio === null) {
           return "#212529";
         }
+        // Use white text on high intensity cells for readability / 对高强度色块使用白字以增强可读性
         return ratio >= 0.75 ? "#ffffff" : "#212529";
       }
 
+      function formatPressureValue(value) {
+        // Drop fractional part for display clarity / 去掉小数部分以便阅读
+        return Math.trunc(value);
+      }
+
       function applyMirroring(values, rows, cols) {
+        // Without full dimensions simply clone the provided values / 没有完整行列信息时直接克隆原始数组
         if (!rows || !cols) {
           return values.slice();
         }
         const result = [];
         for (let displayRow = 0; displayRow < rows; displayRow += 1) {
+          // Flip row index when mirrorRows is enabled / 启用行镜像时翻转行索引
           const sourceRow = mirrorRows ? rows - 1 - displayRow : displayRow;
           const start = sourceRow * cols;
           const rowValues = values.slice(start, start + cols);
           if (mirrorCols) {
+            // Reverse cell order horizontally when requested / 需要列镜像时水平翻转
             rowValues.reverse();
           }
           result.push(...rowValues);
@@ -730,9 +779,11 @@
       }
 
       function persistMirrorSettings() {
+        // No device selected means nothing to persist / 若未选设备则无需保存
         if (!selectedDevice) {
           return;
         }
+        // Store per-device mirror preferences for later restoration / 按设备记录镜像偏好以便恢复
         mirrorSettingsByDevice.set(selectedDevice, {
           rows: mirrorRows,
           cols: mirrorCols
@@ -740,56 +791,69 @@
       }
 
       function syncMirrorControlsFromState() {
+        // Missing toggles implies mirror modes are disabled / 无开关控件则视为禁用镜像
         if (!mirrorRowsToggle || !mirrorColsToggle) {
           mirrorRows = false;
           mirrorCols = false;
           return;
         }
+        // Pull previously saved mirror options for the active device / 读取当前设备之前保存的镜像设置
         const settings = selectedDevice ? mirrorSettingsByDevice.get(selectedDevice) : null;
         mirrorRows = settings ? Boolean(settings.rows) : false;
         mirrorCols = settings ? Boolean(settings.cols) : false;
-      mirrorRowsToggle.checked = mirrorRows;
-      mirrorColsToggle.checked = mirrorCols;
-    }
+        // Sync switch UI state with internal flags / 将内部状态同步回界面开关
+        mirrorRowsToggle.checked = mirrorRows;
+        mirrorColsToggle.checked = mirrorCols;
+      }
 
       function setHeatmapPlaceholder(key) {
+        // Centralize placeholder markup for different empty states / 统一管理不同空状态的提示文案
         heatmapContainer.innerHTML = `<div class="heatmap-placeholder">${t(key)}</div>`;
       }
 
       // Render the heatmap SVG + controls based on latest device selection.
       // 根据当前设备选择渲染热力图 SVG 及控制项。
       function updateHeatmap() {
+        // Start from blank slate before rendering / 渲染前先清空容器
         heatmapContainer.innerHTML = "";
         if (!selectedDevice) {
+          // No device chosen – show helper text / 未选择设备时展示提示
           setHeatmapPlaceholder("heatmap.empty.no_device");
           return;
         }
         const entry = state.get(selectedDevice);
         if (!entry) {
+          // Device selected but no data cached yet / 已选设备但尚无数据
           setHeatmapPlaceholder("heatmap.empty.waiting");
           return;
         }
         const layout = parseLayoutKey(selectedLayoutKey);
         if (!layout) {
+          // Layout missing means no grid to draw / 没有布局信息无法绘制网格
           setHeatmapPlaceholder("heatmap.empty.no_layout");
           return;
         }
         const [rows, cols] = layout;
         const totalCells = rows * cols;
+        // Copy pressure values so mutations don't leak to state / 拷贝压力值避免修改共享状态
         const values = Array.isArray(entry.pressureValues) ? [...entry.pressureValues] : [];
         if (values.length > totalCells) {
+          // Trim overflow values to match grid size / 若超出网格则截断
           values.length = totalCells;
         }
         const paddedValues = values.slice();
         while (paddedValues.length < totalCells) {
+          // Pad with NaN so grid is rectangular / 使用 NaN 补齐以获得完整矩阵
           paddedValues.push(NaN);
         }
+        // Apply row/column mirroring before rendering / 在渲染前套用行列镜像
         const displayValues = applyMirroring(paddedValues, rows, cols);
         const validValues = paddedValues.filter((value) => Number.isFinite(value));
         const hasValidValues = validValues.length > 0;
         const dataMin = hasValidValues ? Math.min(...validValues) : null;
         const dataMax = hasValidValues ? Math.max(...validValues) : null;
         updateRangePlaceholders(dataMin, dataMax);
+        // Resolve final coloring boundaries (custom overrides win) / 计算最终的着色边界（优先自定义范围）
         const { min: resolvedMin, max: resolvedMax } = resolveEffectiveRange(dataMin, dataMax);
         const min = Number.isFinite(resolvedMin) ? resolvedMin : 0;
         const max = Number.isFinite(resolvedMax) ? resolvedMax : min;
@@ -803,11 +867,14 @@
           const cell = document.createElement("div");
           cell.className = "heatmap-cell";
           if (Number.isFinite(value)) {
-            cell.textContent = value.toFixed(2);
+            // For valid numeric cells, show value + color coding / 对有效数值显示读数并着色
+            const displayValue = formatPressureValue(value);
+            cell.textContent = displayValue;
             cell.style.backgroundColor = valueToColor(value, min, max);
             cell.style.color = valueToTextColor(value, min, max);
-            cell.title = `${t("heatmap.tooltip.value")}${value}`;
+            cell.title = `${t("heatmap.tooltip.value")}${displayValue}`;
           } else {
+            // Missing data uses placeholder and tooltip / 缺失数据使用占位符与提示
             cell.classList.add("is-empty");
             cell.textContent = "--";
             cell.title = t("heatmap.tooltip.missing");
@@ -819,6 +886,7 @@
       }
 
       function updateLayoutOptions() {
+        // Layout selector absent (e.g., stripped-down UI) / 缺少布局选择器（精简界面）
         if (!layoutSelector) {
           return;
         }
@@ -829,6 +897,7 @@
         if (mirrorColsToggle) {
           mirrorColsToggle.disabled = true;
         }
+        // Always resync mirror toggles because device context may change / 设备上下文可能改变，需重新同步镜像状态
         syncMirrorControlsFromState();
         const sensorCount =
           entry && Number.isInteger(entry.sensorCount) && entry.sensorCount > 0
@@ -838,6 +907,7 @@
         const hasValidEntry = Boolean(entry) && sensorCount !== null;
 
         if (!hasValidEntry) {
+          // Entry missing – collapse selector to placeholder option / 缺少条目时将选择器收敛为占位项
           if (
             layoutOptionsCache.dn !== null ||
             layoutOptionsCache.sensorCount !== null ||
@@ -870,6 +940,7 @@
         const pairs = computeFactorPairs(sensorCount);
         const optionKeys = pairs.map(([rows, cols]) => `${rows}x${cols}`);
         if (!optionKeys.length) {
+          // Sensor count could not be factored; disable selection / 无法根据传感器数量推导布局时禁用控件
           layoutSelector.innerHTML = "";
           const option = document.createElement("option");
           option.value = "";
@@ -897,6 +968,7 @@
           languageChanged;
 
         if (optionsChanged) {
+          // Rebuild dropdown options whenever list changes / 当可选列表改变时重建下拉项
           layoutSelector.innerHTML = "";
           pairs.forEach(([rows, cols]) => {
             const key = `${rows}x${cols}`;
@@ -908,6 +980,7 @@
         }
 
         if (!selectedLayoutKey || !optionKeys.includes(selectedLayoutKey)) {
+          // Keep previous selection when possible, else fall back to default / 若可能保留先前选择，否则回退默认值
           selectedLayoutKey =
             layoutOptionsCache.selectedKey && optionKeys.includes(layoutOptionsCache.selectedKey)
               ? layoutOptionsCache.selectedKey
@@ -918,6 +991,7 @@
         layoutSelector.disabled = false;
 
         if (mirrorRowsToggle) {
+          // Re-enable toggles once layout is valid / 布局有效后重新启用镜像开关
           mirrorRowsToggle.disabled = false;
         }
         if (mirrorColsToggle) {
@@ -936,15 +1010,18 @@
       }
 
       function updateDeviceOptions() {
+        // Some environments hide selector entirely / 某些环境可能完全隐藏设备选择器
         if (!deviceSelector) {
           return false;
         }
+        // Build sorted list so UI order is stable / 排序以保持界面顺序稳定
         const devices = Array.from(state.keys()).sort();
         const previousSelection = selectedDevice;
         const listChanged = !arraysEqual(devices, deviceOptionsCache.devices);
         const languageChanged = deviceOptionsCache.lang !== currentLanguage;
 
         if (!devices.length) {
+          // No devices yet – show waiting placeholder and reset caches / 尚无设备时显示等待提示并重置缓存
           if (listChanged || languageChanged) {
             deviceSelector.innerHTML = "";
             const option = document.createElement("option");
@@ -961,6 +1038,7 @@
         }
 
         if (listChanged || languageChanged) {
+          // Recreate option tags when device list or language changes / 设备列表或语言变化时重新创建选项
           deviceSelector.innerHTML = "";
           devices.forEach((dn) => {
             const option = document.createElement("option");
@@ -971,6 +1049,7 @@
         }
 
         if (!selectedDevice || !devices.includes(selectedDevice)) {
+          // Preserve prior choice when possible, else pick first / 若可能保留之前的选择，否则取第一项
           selectedDevice = previousSelection && devices.includes(previousSelection)
             ? previousSelection
             : devices[0];
@@ -986,16 +1065,14 @@
         return listChanged || languageChanged || selectionChanged;
       }
 
-      // --- Dashboard summary (active devices / total pressure) ---
-      // --- 仪表盘概要：活跃设备与总压力 ---
+      // --- Dashboard summary (active devices only) ---
+      // --- 仪表盘概要：仅展示活跃设备 ---
       function updateSummary() {
+        // Aggregate active device count based on freshness / 根据数据新鲜度统计活跃设备数量
         const now = Date.now();
         let active = 0;
-        let total = 0;
         for (const entry of state.values()) {
-          if (Number.isFinite(entry.pressureSum)) {
-            total += entry.pressureSum;
-          }
+          // Treat entries newer than threshold as active / 将未超过过期阈值的记录视作活跃
           if (entry.receivedAt && now - entry.receivedAt <= STALE_THRESHOLD_MS) {
             active += 1;
           }
@@ -1003,12 +1080,10 @@
         if (activeDevicesLabel) {
           activeDevicesLabel.textContent = active;
         }
-        if (totalPressureLabel) {
-          totalPressureLabel.textContent = total.toFixed(2);
-        }
       }
 
       function updateLastUpdateIndicator() {
+        // Find latest received timestamp across devices / 查找所有设备中最新的接收时间
         const latest = Array.from(state.values()).reduce(
           (max, entry) => Math.max(max, entry.receivedAt || 0),
           0
@@ -1019,10 +1094,12 @@
       }
 
       function performRefresh() {
+        // Reset pending flag before running heavy updates / 在执行耗时刷新前先复位待刷新标记
         pendingRefresh = false;
         lastRefreshTimestamp = Date.now();
         updateSummary();
         updateTable();
+        // Only rebuild layout selector when device list changed or selection valid / 仅在设备列表变化或仍有选择时更新布局
         const deviceChanged = updateDeviceOptions();
         if (deviceChanged || selectedDevice !== null) {
           updateLayoutOptions();
@@ -1031,6 +1108,7 @@
       }
 
       function refreshUI() {
+        // Debounce expensive refresh cascades / 对昂贵的刷新过程做防抖
         pendingRefresh = true;
         if (refreshTimerId !== null) {
           return;
@@ -1043,6 +1121,7 @@
           if (!pendingRefresh) {
             return;
           }
+          // Execute deferred refresh when timer fires / 定时器触发后执行延迟刷新
           performRefresh();
         }, delay);
       }
@@ -1050,6 +1129,7 @@
       function updateTable() {
         const tbody = document.querySelector("#device-table tbody");
         const now = Date.now();
+        // Sort by DN for predictable ordering (locale aware when possible) / 优先按 DN 排序（可用时采用本地化比较）
         const rows = Array.from(state.values()).sort((a, b) => {
           if (a.dn && b.dn && a.dn.localeCompare) {
             return a.dn.localeCompare(b.dn, undefined, { numeric: true, sensitivity: "base" });
@@ -1064,13 +1144,13 @@
           const tr = document.createElement("tr");
           const isStale = !entry.receivedAt || now - entry.receivedAt > STALE_THRESHOLD_MS;
           if (isStale) {
+            // Gray out rows that haven't updated recently / 将长时间未更新的行置灰
             tr.classList.add("text-muted");
           }
-          const pressureText = Number.isFinite(entry.pressureSum) ? entry.pressureSum.toFixed(2) : "--";
+          // Format row markup including action button / 生成包含操作按钮的行内容
           tr.innerHTML = `
             <td><code>${entry.dn}</code></td>
             <td>${entry.sensorCount ?? "--"}</td>
-            <td>${pressureText}</td>
             <td>${entry.frameTime ? new Date(entry.frameTime).toLocaleString() : "--"}</td>
             <td>${entry.receivedAt ? new Date(entry.receivedAt).toLocaleString() : "--"}</td>
             <td class="text-center">
@@ -1080,6 +1160,7 @@
           const removeButton = tr.querySelector(".remove-device");
           if (removeButton) {
             removeButton.addEventListener("click", (event) => {
+              // Stop click from selecting row, then purge device / 阻止事件冒泡后移除该设备
               event.stopPropagation();
               removeDevice(entry.dn);
             });
@@ -1090,19 +1171,23 @@
       }
 
       function removeDevice(dn) {
+        // Ignore requests for unknown devices / 忽略未知设备的移除请求
         if (!state.has(dn)) {
           return;
         }
+        // Drop device state and any cached mirror preferences / 删除设备状态及其镜像偏好
         state.delete(dn);
         mirrorSettingsByDevice.delete(dn);
         if (selectedDevice === dn) {
           selectedDevice = null;
           layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: layoutOptionsCache.lang };
         }
+        // Trigger full UI refresh so dropdown + table update / 触发整体刷新以更新下拉与表格
         refreshUI();
       }
 
       function normalizeEntry(entry) {
+        // Validate payload shape before processing / 在处理前确认负载结构
         if (!entry || typeof entry !== "object") {
           return null;
         }
@@ -1114,6 +1199,7 @@
         let pressureValues = [];
         if (payload && typeof payload === "object") {
           const rawPressures = Array.isArray(payload.p) ? payload.p : [];
+          // Coerce every reading into a number (or NaN) / 将每个读数转成数字（或 NaN）
           const numericPressures = rawPressures.map((value) => {
             const num = Number(value);
             return Number.isFinite(num) ? num : NaN;
@@ -1126,8 +1212,10 @@
           }
           pressureValues = numericPressures.slice(0, sensorCount);
           while (pressureValues.length < sensorCount) {
+            // Pad with NaN if payload shorter than declared count / 当数据不足时用 NaN 补齐
             pressureValues.push(NaN);
           }
+          // Sum only valid numeric pressures / 仅累加有效的压力值
           pressureSum = pressureValues.reduce(
             (acc, value) => acc + (Number.isFinite(value) ? value : 0),
             0
@@ -1149,12 +1237,15 @@
       }
 
       function applyEntry(entry, options = {}) {
+        // Normalize raw payload into canonical shape / 将原始负载转换成规范结构
         const normalized = normalizeEntry(entry);
         if (!normalized) return;
         state.set(normalized.dn, normalized);
         if (options.defer) {
+          // Caller requested to batch updates, so bail / 调用方要求延迟刷新则直接返回
           return;
         }
+        // Immediate refresh keeps UI responsive / 立即刷新可保持界面响应
         refreshUI();
       }
 
@@ -1162,18 +1253,22 @@
       // 轮询获取快照，防止 SSE 偶发中断导致数据落后。
       async function fetchSnapshot() {
         try {
+          // Pull latest dataset from bridge REST endpoint / 通过桥接 REST 接口拉取最新数据集
           const resp = await fetch(SNAPSHOT_ENDPOINT);
           const data = await resp.json();
           if (Array.isArray(data.data)) {
+            // Reuse applyEntry for each snapshot item, deferring refresh for batching / 复用 applyEntry 处理每条快照，并延迟刷新以批量更新
             data.data.forEach((item) => applyEntry(item, { defer: true }));
             refreshUI();
           }
+          // Mark snapshot state as healthy and colorize indicator / 将快照状态标记为正常并更新指示器颜色
           setStatusIndicator("snapshot_ok");
           if (statusIndicator) {
             statusIndicator.classList.remove("bg-secondary", "bg-danger");
             statusIndicator.classList.add("bg-success");
           }
         } catch (err) {
+          // Network or parsing failures push indicator to error state / 网络或解析失败将状态切换为错误
           setStatusIndicator("snapshot_error");
           if (statusIndicator) {
             statusIndicator.classList.remove("bg-secondary", "bg-success");
@@ -1186,6 +1281,7 @@
       // Subscribe to bridge SSE stream for near real-time updates.
       // 订阅桥接 SSE 流，实现准实时更新。
       function subscribeStream() {
+        // Reset previous SSE connection before opening a new one / 新建 SSE 连接前先清理旧实例
         cleanupEventSource();
         clearStreamReconnectTimer();
         const source = new EventSource(STREAM_ENDPOINT);
@@ -1199,6 +1295,7 @@
           try {
             const payload = JSON.parse(event.data);
             if (Array.isArray(payload.data)) {
+              // Snapshot events refresh entire dataset / snapshot 事件刷新整套数据
               payload.data.forEach((item) => applyEntry(item, { defer: true }));
               refreshUI();
             }
@@ -1209,12 +1306,14 @@
         source.addEventListener("update", (event) => {
           try {
             const payload = JSON.parse(event.data);
+            // Update events only touch single device / update 事件通常只更新单个设备
             applyEntry(payload);
           } catch (err) {
             console.error(t("console.update_event_error"), err);
           }
         });
         source.addEventListener("error", () => {
+          // Switch indicator to warning and attempt graceful recovery / 将指示器切为警告并尝试恢复
           setStatusIndicator("stream_error");
           if (statusIndicator) {
             statusIndicator.classList.remove("bg-success");
@@ -1224,10 +1323,12 @@
           const shouldFetchSnapshot = streamReconnectTimerId === null;
           scheduleStreamReconnect();
           if (shouldFetchSnapshot) {
+            // Kick off snapshot fetch so UI doesn't stagnate / 触发快照抓取避免界面停滞
             fetchSnapshot();
           }
         });
         source.onopen = () => {
+          // Connected successfully; reset backoff and mark success / 连接成功后重置退避并标为成功
           clearStreamReconnectTimer();
           streamReconnectAttempts = 0;
           setStatusIndicator("stream_ok");
