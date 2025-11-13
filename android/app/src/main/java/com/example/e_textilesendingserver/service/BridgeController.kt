@@ -14,6 +14,9 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
@@ -31,6 +34,8 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
+import kotlin.text.Charsets
+import org.json.JSONArray
 import org.json.JSONObject
 
 class BridgeController(
@@ -69,7 +74,6 @@ class BridgeController(
         val rawAggregator = RawAggregator(config)
         val packetQueue = PacketQueue(config.queueSize, config.dropOldest)
         val subscriptionManager = GcuSubscriptionManager(config)
-
         try {
             mqttBridge.connect(config)
             subscriptionManager.start(scope)
@@ -120,6 +124,7 @@ class BridgeController(
                 Log.w(TAG, "Unable to set UDP receive buffer: ${it.message}")
             }
             soTimeout = SOCKET_POLL_TIMEOUT_MS
+            kotlin.runCatching { broadcast = true }
         }
         subscriptionManager.bindSocket(socket)
         val localForwarder = if (config.udpCopyLocal) DatagramSocket().apply {
@@ -156,6 +161,7 @@ class BridgeController(
                 }
             }
         } finally {
+            runCatching { subscriptionManager.broadcastAll() }
             socket.close()
             localForwarder?.close()
         }
@@ -222,17 +228,22 @@ class BridgeController(
     private suspend fun publishRegistryLoop(config: BridgeConfig, registry: DeviceRegistry) {
         while (scope.isActive) {
             val snapshot = registry.snapshot(config.configAgentId)
+            val devicesArray = JSONArray().apply {
+                snapshot.devices.forEach {
+                    put(
+                        JSONObject().apply {
+                            put("dn", it.dn)
+                            put("ip", it.ip)
+                            put("last_seen", formatIso(it.lastSeen))
+                        }
+                    )
+                }
+            }
             val payload = JSONObject().apply {
                 put("agent_id", snapshot.agentId)
                 put("device_count", snapshot.deviceCount)
-                put("devices", snapshot.devices.map {
-                    JSONObject().apply {
-                        put("dn", it.dn)
-                        put("ip", it.ip)
-                        put("last_seen", it.lastSeen)
-                    }
-                })
-                put("timestamp", System.currentTimeMillis())
+                put("devices", devicesArray)
+                put("timestamp", formatIso(System.currentTimeMillis()))
             }.toString().toByteArray()
             val topic = "${config.configAgentTopic.trimEnd('/')}/${config.configAgentId}"
             mqttBridge.publish(topic, payload, config.mqttQos, retain = true)
@@ -304,15 +315,26 @@ class BridgeController(
             put("model", model)
         }.toString() + "\n"
 
-        val reply = sendConfigPayload(targetIp, config.deviceTcpPort, config.deviceTcpTimeoutSec, payloadString)
-        publishCommandResult(
-            config = config,
-            commandId = commandId,
-            dn = dn,
-            status = "ok",
-            ip = targetIp,
-            extra = reply,
-        )
+        try {
+            val reply = sendConfigPayload(targetIp, config.deviceTcpPort, config.deviceTcpTimeoutSec, payloadString)
+            publishCommandResult(
+                config = config,
+                commandId = commandId,
+                dn = dn,
+                status = "ok",
+                ip = targetIp,
+                extra = reply,
+            )
+        } catch (ex: Exception) {
+            publishCommandResult(
+                config = config,
+                commandId = commandId,
+                dn = dn,
+                ip = targetIp,
+                status = "error",
+                error = "internal-error: ${ex.message}",
+            )
+        }
     }
 
     private fun publishCommandResult(
@@ -493,6 +515,11 @@ class BridgeController(
         private const val TAG = "BridgeController"
         private const val SOCKET_POLL_TIMEOUT_MS = 500
         private const val PACKET_POLL_TIMEOUT_MS = 100L
+        private val ISO_FORMATTER: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").withZone(ZoneOffset.UTC)
+
+        private fun formatIso(millis: Long): String =
+            ISO_FORMATTER.format(Instant.ofEpochMilli(millis).atOffset(ZoneOffset.UTC))
     }
 
     private data class UdpPacket(
@@ -537,7 +564,6 @@ class BridgeController(
         private data class Session(
             var lastSeen: Long,
             var lastSubscribe: Long,
-            var acked: Boolean,
         )
 
         private val sessions = linkedMapOf<InetSocketAddress, Session>()
@@ -551,7 +577,7 @@ class BridgeController(
                 val intervalMs = maxOf(config.gcuHeartbeatIntervalSec * 500L, 500L)
                 while (isActive) {
                     delay(intervalMs)
-                    tick()
+                    sendHeartbeats()
                 }
             }
         }
@@ -570,71 +596,72 @@ class BridgeController(
         fun bindSocket(sock: DatagramSocket) {
             if (!config.gcuEnabled) return
             socket = sock
+            kotlin.runCatching { sock.broadcast = true }
         }
 
         fun handleIncoming(packet: DatagramPacket, payload: ByteArray): Boolean {
             if (!config.gcuEnabled) return false
-            val text = decodeControl(payload)
-            val key = InetSocketAddress(packet.address, packet.port)
+            val control = decodeControl(payload)
+            val addr = InetSocketAddress(packet.address, packet.port)
             val now = System.currentTimeMillis()
-            if (text != null) {
-                return when (text) {
+            if (control != null) {
+                val upper = control.uppercase()
+                when (upper) {
                     config.gcuAckToken.uppercase() -> {
-                        markSession(key, now, acknowledge = true)
-                        true
+                        markSession(addr, now, immediate = false)
+                        return true
                     }
                     config.gcuBroadcastToken.uppercase() -> {
                         synchronized(lock) {
-                            sessions.remove(key)
+                            sessions.remove(addr)
                         }
-                        true
-                    }
-                    else -> {
-                        ensureSession(key, now)
-                        false
+                        return true
                     }
                 }
             }
-            ensureSession(key, now)
+            markSession(addr, now, immediate = true)
             return false
         }
 
-        private fun ensureSession(key: InetSocketAddress, now: Long) {
-            val session = synchronized(lock) {
-                sessions.getOrPut(key) { Session(now, 0, false) }.also {
-                    it.lastSeen = now
-                }
-            }
-            maybeSendSubscribe(key, session, now)
+        fun broadcastAll() {
+            if (!config.gcuEnabled) return
+            val targets = synchronized(lock) { sessions.keys.toList() }
+            targets.forEach { sendCommand(config.gcuBroadcastToken, it) }
         }
 
-        private fun markSession(key: InetSocketAddress, now: Long, acknowledge: Boolean) {
+        private fun markSession(addr: InetSocketAddress, now: Long, immediate: Boolean) {
             val session = synchronized(lock) {
-                sessions.getOrPut(key) { Session(now, 0, false) }.also {
-                    it.lastSeen = now
-                    if (acknowledge) it.acked = true
-                }
+                sessions.getOrPut(addr) { Session(now, 0L) }.also { it.lastSeen = now }
             }
-            maybeSendSubscribe(key, session, now)
+            maybeSendSubscribe(addr, session, now, immediate)
         }
 
-        private fun maybeSendSubscribe(key: InetSocketAddress, session: Session, now: Long) {
-            if (now - session.lastSubscribe < config.gcuHeartbeatIntervalSec * 1000L) {
+        private fun maybeSendSubscribe(
+            addr: InetSocketAddress,
+            session: Session,
+            now: Long,
+            immediate: Boolean,
+        ) {
+            val intervalMs = config.gcuHeartbeatIntervalSec * 1000L
+            if (!immediate && now - session.lastSubscribe < intervalMs) {
                 return
             }
-            sendCommand(config.gcuSubscribeToken, key)
             session.lastSubscribe = now
+            sendCommand(config.gcuSubscribeToken, addr)
         }
 
-        private fun tick() {
+        private fun sendHeartbeats() {
+            if (!config.gcuEnabled) return
+            val now = System.currentTimeMillis()
+            val intervalMs = config.gcuHeartbeatIntervalSec * 1000L
+            val cutoff = config.gcuFailoverSec * 1000L
             val toSend = mutableListOf<InetSocketAddress>()
             val toRemove = mutableListOf<InetSocketAddress>()
-            val now = System.currentTimeMillis()
             synchronized(lock) {
                 sessions.forEach { (addr, session) ->
-                    if (now - session.lastSeen > config.gcuFailoverSec * 1000L) {
+                    if (now - session.lastSeen > cutoff) {
                         toRemove.add(addr)
-                    } else if (now - session.lastSubscribe >= config.gcuHeartbeatIntervalSec * 1000L) {
+                    } else if (now - session.lastSubscribe >= intervalMs) {
                         session.lastSubscribe = now
                         toSend.add(addr)
                     }
@@ -650,16 +677,11 @@ class BridgeController(
             kotlin.runCatching { socket?.send(packet) }
         }
 
-        private fun broadcastAll() {
-            val targets = synchronized(lock) { sessions.keys.toList() }
-            targets.forEach { sendCommand(config.gcuBroadcastToken, it) }
-        }
-
         private fun decodeControl(payload: ByteArray): String? {
             if (payload.isEmpty() || payload.size > 64) return null
             if (payload.any { it < 0x20 || it > 0x7E }) return null
             return kotlin.runCatching {
-                payload.toString(Charsets.US_ASCII).trim().uppercase()
+                payload.toString(Charsets.US_ASCII).trim()
             }.getOrNull()?.takeIf { it.isNotEmpty() }
         }
     }

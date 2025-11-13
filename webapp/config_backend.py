@@ -83,7 +83,7 @@ class ConfigService:
 
     def _handle_agent_snapshot(self, topic: str, payload: dict) -> None:
         agent_id = payload.get("agent_id") or topic.split("/")[-1]
-        devices = payload.get("devices") or []
+        devices = self._normalize_devices(payload.get("devices"))
         ts = payload.get("timestamp") or time.time()
         with self._lock:
             self._agents[agent_id] = {"timestamp": ts, "topic": topic}
@@ -112,12 +112,35 @@ class ConfigService:
             self._results.appendleft(payload)
 
     @staticmethod
+    def _normalize_devices(raw) -> List[dict]:
+        if not raw:
+            return []
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except Exception:
+                return []
+        if isinstance(raw, dict):
+            raw = [raw]
+        if not isinstance(raw, list):
+            return []
+        devices = []
+        for item in raw:
+            if isinstance(item, dict):
+                devices.append(item)
+        return devices
+
+    @staticmethod
     def _to_epoch(value) -> float:
         if isinstance(value, (int, float)):
             return float(value)
         try:
-            dt = datetime.fromisoformat(value)
-            return dt.timestamp()
+            if isinstance(value, str):
+                text = value.strip()
+                if text.endswith("Z"):
+                    text = text[:-1] + "+00:00"
+                return datetime.fromisoformat(text).timestamp()
+            return 0.0
         except Exception:
             return 0.0
 
