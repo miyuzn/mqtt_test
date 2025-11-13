@@ -68,9 +68,11 @@ class BridgeController(
         val stats = StatsTracker(config, registry)
         val rawAggregator = RawAggregator(config)
         val packetQueue = PacketQueue(config.queueSize, config.dropOldest)
+        val subscriptionManager = GcuSubscriptionManager(config)
 
         try {
             mqttBridge.connect(config)
+            subscriptionManager.start(scope)
             BridgeStatusStore.update(
                 BridgeState.Running(
                     BridgeMetrics(
@@ -87,7 +89,7 @@ class BridgeController(
             kotlinx.coroutines.coroutineScope {
                 launch { publishRegistryLoop(config, registry) }
                 launch { subscribeCommands(config, registry) }
-                launch { udpLoop(config, packetQueue, stats) }
+                launch { udpLoop(config, packetQueue, stats, subscriptionManager) }
                 launch { mqttWorker(config, registry, stats, rawAggregator, packetQueue) }
             }
         } catch (ex: CancellationException) {
@@ -96,6 +98,7 @@ class BridgeController(
             BridgeStatusStore.update(BridgeState.Error(ex.message ?: "发生未知错误"))
         } finally {
             mqttBridge.disconnect()
+            subscriptionManager.stop()
             if (BridgeStatusStore.state.value !is BridgeState.Error) {
                 BridgeStatusStore.update(BridgeState.Idle)
             }
@@ -106,6 +109,7 @@ class BridgeController(
         config: BridgeConfig,
         packetQueue: PacketQueue,
         stats: StatsTracker,
+        subscriptionManager: GcuSubscriptionManager,
     ) = withContext(Dispatchers.IO) {
         val socket = DatagramSocket(null).apply {
             reuseAddress = true
@@ -117,6 +121,7 @@ class BridgeController(
             }
             soTimeout = SOCKET_POLL_TIMEOUT_MS
         }
+        subscriptionManager.bindSocket(socket)
         val localForwarder = if (config.udpCopyLocal) DatagramSocket().apply {
             connect(InetSocketAddress(config.localForwardIp, config.localForwardPort))
         } else null
@@ -141,6 +146,9 @@ class BridgeController(
                     localForwarder?.send(DatagramPacket(data, data.size))
                 }.onFailure {
                     Log.w(TAG, "Local UDP forward failed: ${it.message}")
+                }
+                if (subscriptionManager.handleIncoming(datagram, data)) {
+                    continue
                 }
                 val offered = packetQueue.offer(UdpPacket(data, address))
                 if (!offered) {
@@ -520,6 +528,139 @@ class BridgeController(
                 Thread.currentThread().interrupt()
                 null
             }
+        }
+    }
+
+    private class GcuSubscriptionManager(
+        private val config: BridgeConfig,
+    ) {
+        private data class Session(
+            var lastSeen: Long,
+            var lastSubscribe: Long,
+            var acked: Boolean,
+        )
+
+        private val sessions = linkedMapOf<InetSocketAddress, Session>()
+        private val lock = Any()
+        private var socket: DatagramSocket? = null
+        private var job: Job? = null
+
+        fun start(scope: CoroutineScope) {
+            if (!config.gcuEnabled || job != null) return
+            job = scope.launch(Dispatchers.IO) {
+                val intervalMs = maxOf(config.gcuHeartbeatIntervalSec * 500L, 500L)
+                while (isActive) {
+                    delay(intervalMs)
+                    tick()
+                }
+            }
+        }
+
+        fun stop() {
+            job?.cancel()
+            job = null
+            if (config.gcuBroadcastOnStop) {
+                broadcastAll()
+            }
+            synchronized(lock) {
+                sessions.clear()
+            }
+        }
+
+        fun bindSocket(sock: DatagramSocket) {
+            if (!config.gcuEnabled) return
+            socket = sock
+        }
+
+        fun handleIncoming(packet: DatagramPacket, payload: ByteArray): Boolean {
+            if (!config.gcuEnabled) return false
+            val text = decodeControl(payload)
+            val key = InetSocketAddress(packet.address, packet.port)
+            val now = System.currentTimeMillis()
+            if (text != null) {
+                return when (text) {
+                    config.gcuAckToken.uppercase() -> {
+                        markSession(key, now, acknowledge = true)
+                        true
+                    }
+                    config.gcuBroadcastToken.uppercase() -> {
+                        synchronized(lock) {
+                            sessions.remove(key)
+                        }
+                        true
+                    }
+                    else -> {
+                        ensureSession(key, now)
+                        false
+                    }
+                }
+            }
+            ensureSession(key, now)
+            return false
+        }
+
+        private fun ensureSession(key: InetSocketAddress, now: Long) {
+            val session = synchronized(lock) {
+                sessions.getOrPut(key) { Session(now, 0, false) }.also {
+                    it.lastSeen = now
+                }
+            }
+            maybeSendSubscribe(key, session, now)
+        }
+
+        private fun markSession(key: InetSocketAddress, now: Long, acknowledge: Boolean) {
+            val session = synchronized(lock) {
+                sessions.getOrPut(key) { Session(now, 0, false) }.also {
+                    it.lastSeen = now
+                    if (acknowledge) it.acked = true
+                }
+            }
+            maybeSendSubscribe(key, session, now)
+        }
+
+        private fun maybeSendSubscribe(key: InetSocketAddress, session: Session, now: Long) {
+            if (now - session.lastSubscribe < config.gcuHeartbeatIntervalSec * 1000L) {
+                return
+            }
+            sendCommand(config.gcuSubscribeToken, key)
+            session.lastSubscribe = now
+        }
+
+        private fun tick() {
+            val toSend = mutableListOf<InetSocketAddress>()
+            val toRemove = mutableListOf<InetSocketAddress>()
+            val now = System.currentTimeMillis()
+            synchronized(lock) {
+                sessions.forEach { (addr, session) ->
+                    if (now - session.lastSeen > config.gcuFailoverSec * 1000L) {
+                        toRemove.add(addr)
+                    } else if (now - session.lastSubscribe >= config.gcuHeartbeatIntervalSec * 1000L) {
+                        session.lastSubscribe = now
+                        toSend.add(addr)
+                    }
+                }
+                toRemove.forEach { sessions.remove(it) }
+            }
+            toSend.forEach { sendCommand(config.gcuSubscribeToken, it) }
+        }
+
+        private fun sendCommand(token: String, addr: InetSocketAddress) {
+            val bytes = token.toByteArray(Charsets.US_ASCII)
+            val packet = DatagramPacket(bytes, bytes.size, addr.address, addr.port)
+            kotlin.runCatching { socket?.send(packet) }
+        }
+
+        private fun broadcastAll() {
+            val targets = synchronized(lock) { sessions.keys.toList() }
+            targets.forEach { sendCommand(config.gcuBroadcastToken, it) }
+        }
+
+        private fun decodeControl(payload: ByteArray): String? {
+            if (payload.isEmpty() || payload.size > 64) return null
+            if (payload.any { it < 0x20 || it > 0x7E }) return null
+            return kotlin.runCatching {
+                payload.toString(Charsets.US_ASCII).trim().uppercase()
+            }.getOrNull()?.takeIf { it.isNotEmpty() }
         }
     }
 }

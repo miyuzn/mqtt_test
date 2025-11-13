@@ -81,6 +81,14 @@ Web 服务会同步订阅 MQTT 数据，并通过 Socket.IO 将压力数据推�
 
 ---
 
+## 📡 GCU 广播/单播握手流程
+
+- **设备端（GCU）** 默认向 `255.255.255.255:13250` 广播数据帧；一旦收到正文为 `GCU_SUBSCRIBE` 的 UDP 包，会立即回 `GCU_ACK` 并将后续采集数据切换为对该源 IP/端口的单播；若 20 秒未再收到心跳或收到了 `GCU_BROADCAST`，设备会回退到广播模式。
+- **采集端（Android/PC 的 `data_receive.py`）** 监听 13250 端口：首次收到广播帧时立刻向源地址发送 `GCU_SUBSCRIBE`，收到 `GCU_ACK` 视为握手成功，并且每 5 秒发送一次心跳（同样是 `GCU_SUBSCRIBE`）确保链路保持单播；需要恢复广播时，可显式向设备发送 `GCU_BROADCAST`。
+- 所有握手参数（令牌文本、心跳/超时时间、退出时是否自动广播）都可以在 `config.ini` 的 `[GCU]` 段配置，Android 端默认与 Python 端保持一致，因此无需额外配置即可实现自动握手/心跳。
+
+---
+
 ## ⚙️ 默认配置说明
 
 项目根目录中包含 `config.ini` 文件，用于定义 UDP 与 MQTT 参数：
@@ -102,6 +110,15 @@ RESULT_TOPIC = etx/v1/config/result
 AGENT_TOPIC = etx/v1/config/agents
 DEVICE_TCP_PORT = 22345
 DEVICE_TCP_TIMEOUT = 3.0
+
+[GCU]
+ENABLED = 1
+SUBSCRIBE_TOKEN = GCU_SUBSCRIBE
+ACK_TOKEN = GCU_ACK
+BROADCAST_TOKEN = GCU_BROADCAST
+HEARTBEAT_SEC = 5
+FALLBACK_SEC = 20
+BROADCAST_ON_EXIT = 1
 
 [PARSER]
 RAW_BROKER_HOST = mosquitto

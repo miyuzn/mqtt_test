@@ -94,6 +94,15 @@ DEVICE_TCP_TIMEOUT      = get_conf("CONFIG", "DEVICE_TCP_TIMEOUT", 3.0, float)
 REGISTRY_TTL            = get_conf("CONFIG", "REGISTRY_TTL", 300, int)
 REGISTRY_PUBLISH_SEC    = get_conf("CONFIG", "REGISTRY_PUBLISH_SEC", 5, int)
 
+# GCU subscription / handshake settings
+GCU_ENABLED               = get_conf("GCU", "ENABLED", 1, int) == 1
+GCU_SUBSCRIBE_TOKEN       = get_conf("GCU", "SUBSCRIBE_TOKEN", "GCU_SUBSCRIBE").strip() or "GCU_SUBSCRIBE"
+GCU_ACK_TOKEN             = get_conf("GCU", "ACK_TOKEN", "GCU_ACK").strip().upper() or "GCU_ACK"
+GCU_BROADCAST_TOKEN       = get_conf("GCU", "BROADCAST_TOKEN", "GCU_BROADCAST").strip().upper() or "GCU_BROADCAST"
+GCU_HEARTBEAT_SEC         = max(get_conf("GCU", "HEARTBEAT_SEC", 5.0, float), 1.0)
+GCU_FALLBACK_SEC          = max(get_conf("GCU", "FALLBACK_SEC", 20.0, float), GCU_HEARTBEAT_SEC + 1.0)
+GCU_SEND_BROADCAST_ON_EXIT = get_conf("GCU", "BROADCAST_ON_EXIT", 1, int) == 1
+
 running = True
 pkt_in = 0
 pkt_pub_raw = 0
@@ -113,6 +122,141 @@ command_queue: "queue.Queue[dict]" = queue.Queue()
 
 # Payload constraints (validated by downstream hardware) / 配置负载限制（由下游硬件自行校验）
 
+gcu_manager = SubscriptionManager(
+    enabled=GCU_ENABLED,
+    subscribe_token=GCU_SUBSCRIBE_TOKEN,
+    ack_token=GCU_ACK_TOKEN,
+    broadcast_token=GCU_BROADCAST_TOKEN,
+    heartbeat_sec=GCU_HEARTBEAT_SEC,
+    fallback_sec=GCU_FALLBACK_SEC,
+    send_broadcast_on_exit=GCU_SEND_BROADCAST_ON_EXIT,
+)
+
+class SubscriptionManager:
+    """Maintain GCU subscription handshakes and heartbeats.
+    负责与 GCU 设备的订阅/心跳握手，确保广播 -> 单播顺利转换。
+    """
+
+    def __init__(
+        self,
+        enabled: bool,
+        subscribe_token: str,
+        ack_token: str,
+        broadcast_token: str,
+        heartbeat_sec: float,
+        fallback_sec: float,
+        send_broadcast_on_exit: bool,
+    ) -> None:
+        self.enabled = enabled
+        self.subscribe_payload = (subscribe_token or "GCU_SUBSCRIBE").encode("ascii", "ignore")
+        self.ack_token = ack_token.upper()
+        self.broadcast_token = broadcast_token.upper()
+        self.heartbeat_sec = heartbeat_sec
+        self.fallback_sec = fallback_sec
+        self.send_broadcast_on_exit = send_broadcast_on_exit
+        self._sessions: Dict[Tuple[str, int], dict] = {}
+        self._lock = threading.RLock()
+        self._sock: Optional[socket.socket] = None
+        self._thread: Optional[threading.Thread] = None
+        self._active = threading.Event()
+
+    def bind_socket(self, sock: socket.socket) -> None:
+        if not self.enabled:
+            return
+        self._sock = sock
+
+    def start(self) -> None:
+        if not self.enabled or self._thread:
+            return
+        self._active.set()
+        self._thread = threading.Thread(target=self._heartbeat_loop, name="gcu-heartbeat", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if not self.enabled:
+            return
+        self._active.clear()
+        if self._thread:
+            self._thread.join(timeout=1.5)
+            self._thread = None
+        if self.send_broadcast_on_exit:
+            self.broadcast_all()
+        with self._lock:
+            self._sessions.clear()
+
+    def broadcast_all(self) -> None:
+        if not self.enabled or not self._sock:
+            return
+        payload = self.broadcast_token.encode("ascii", "ignore")
+        with self._lock:
+            targets = list(self._sessions.keys())
+        for addr in targets:
+            self._send(payload, addr)
+
+    def handle_packet(self, payload: bytes, addr: Tuple[str, int]) -> bool:
+        """Return True if the packet is a control frame and should not enter the data queue."""
+        if not self.enabled or not self._sock:
+            return False
+        text = self._decode_control(payload)
+        now = time.time()
+        if text:
+            if text == self.ack_token:
+                self._mark_session(addr, now, mark_ack=True)
+                return True
+            if text == self.broadcast_token:
+                with self._lock:
+                    self._sessions.pop(addr, None)
+                return True
+        self._mark_session(addr, now)
+        return False
+
+    def _decode_control(self, payload: bytes) -> Optional[str]:
+        if not payload or len(payload) > 64:
+            return None
+        try:
+            text = payload.decode("ascii", errors="strict").strip().upper()
+        except Exception:
+            return None
+        if not text:
+            return None
+        if any(ch < " " or ch > "~" for ch in text):
+            return None
+        return text
+
+    def _mark_session(self, addr: Tuple[str, int], now: float, mark_ack: bool = False) -> None:
+        with self._lock:
+            session = self._sessions.get(addr)
+            if session is None:
+                session = {"last_seen": now, "last_sub": 0.0, "ack": False}
+                self._sessions[addr] = session
+            session["last_seen"] = now
+            if mark_ack:
+                session["ack"] = True
+            if now - session["last_sub"] >= self.heartbeat_sec:
+                self._send(self.subscribe_payload, addr)
+                session["last_sub"] = now
+
+    def _send(self, payload: bytes, addr: Tuple[str, int]) -> None:
+        try:
+            self._sock.sendto(payload, addr)
+        except Exception:
+            pass
+
+    def _heartbeat_loop(self) -> None:
+        interval = max(self.heartbeat_sec / 2.0, 0.5)
+        while self._active.is_set():
+            time.sleep(interval)
+            now = time.time()
+            with self._lock:
+                for addr, session in list(self._sessions.items()):
+                    if now - session.get("last_seen", 0.0) > self.fallback_sec:
+                        self._sessions.pop(addr, None)
+                        continue
+                    if now - session.get("last_sub", 0.0) >= self.heartbeat_sec:
+                        self._send(self.subscribe_payload, addr)
+                        session["last_sub"] = now
+
+
 def install_signals():
     def _handler(sig, frame):
         global running
@@ -125,6 +269,10 @@ def make_udp_sock():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SO_RCVBUF_BYTES)
+    except Exception:
+        pass
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     except Exception:
         pass
     sock.bind(("", UDP_LISTEN_PORT))
@@ -141,6 +289,7 @@ def udp_receiver():
     """
     global pkt_in, pkt_drop
     sock = make_udp_sock()
+    gcu_manager.bind_socket(sock)
     fwd = make_local_fwd_sock() if UDP_COPY_LOCAL else None
 
     buf = bytearray(UDP_BUF_BYTES)
@@ -164,6 +313,9 @@ def udp_receiver():
         pkt_in += 1
         data_bytes = bytes(view[:n])
 
+        if gcu_manager.handle_packet(data_bytes, addr):
+            continue
+
         try:
             q.put_nowait((data_bytes, addr))
         except queue.Full:
@@ -182,6 +334,7 @@ def udp_receiver():
     sock.close()
     if fwd:
         fwd.close()
+    gcu_manager.broadcast_all()
     print("[BRIDGE/UDP] receiver stopped.")
 
 def dn_to_hex(dn):
@@ -554,6 +707,7 @@ def stats_printer():
 
 def main():
     install_signals()
+    gcu_manager.start()
     # Spin up UDP/MQTT/stats threads and keep looping until interrupted.
     # Start UDP, MQTT, and stats threads until interrupted / 启动 UDP、MQTT、统计线程并持续运行直到被中断。
     t_recv = threading.Thread(target=udp_receiver, daemon=True)
@@ -571,6 +725,7 @@ def main():
         pass
 
     time.sleep(0.3)
+    gcu_manager.stop()
     print("[MAIN] exiting.")
 
 if __name__ == "__main__":

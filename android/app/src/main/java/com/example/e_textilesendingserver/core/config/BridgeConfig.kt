@@ -32,4 +32,11 @@ data class BridgeConfig(
     val registryTtlSec: Long = 300,
     val registryPublishSec: Long = 5,
     val statsIntervalMs: Long = 2000,
+    val gcuEnabled: Boolean = true,
+    val gcuSubscribeToken: String = "GCU_SUBSCRIBE",
+    val gcuAckToken: String = "GCU_ACK",
+    val gcuBroadcastToken: String = "GCU_BROADCAST",
+    val gcuHeartbeatIntervalSec: Long = 5,
+    val gcuFailoverSec: Long = 20,
+    val gcuBroadcastOnStop: Boolean = true,
 )
