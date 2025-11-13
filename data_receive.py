@@ -204,6 +204,22 @@ def dn_to_hex(dn):
     return b.hex().upper()
 
 
+def quick_dn_from_payload(payload: bytes) -> Optional[str]:
+    """
+    Extract DN from raw payload without full parsing so we can keep the device registry updated
+    even when parsing is disabled.
+    在禁用完整解析时，仅检查帧头即可快速提取 DN，维持设备注册表。
+    """
+    if not payload or len(payload) < 8:
+        return None
+    if payload[0] != 0x5A or payload[1] != 0x5A:
+        return None
+    try:
+        return bytes(payload[2:8]).hex().upper()
+    except Exception:
+        return None
+
+
 def update_device_registry(dn_hex: str, ip: Optional[str]) -> None:
     if not dn_hex or not ip:
         return
@@ -464,6 +480,12 @@ def mqtt_worker():
                 if (time.time() - raw_t0) * 1000.0 >= BATCH_MAX_MS:
                     flush_raw()
             continue
+
+        ip_source = addr[0] if isinstance(addr, tuple) and addr else None
+        if ip_source:
+            dn_hint = quick_dn_from_payload(payload_bytes)
+            if dn_hint:
+                update_device_registry(dn_hint, ip_source)
 
         # Path 1: raw aggregation to reduce overhead / 原始路径：聚合以降低开销
         if PUBLISH_RAW:
