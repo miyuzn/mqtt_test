@@ -3,12 +3,16 @@ package com.example.e_textilesendingserver
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.widget.EditText
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -29,7 +33,7 @@ class MainActivity : AppCompatActivity() {
             if (granted) {
                 startBridgeService()
             } else {
-                updateStatus("通知权限被拒绝，服务仍可运行但无法常驻前台。")
+                updateStatus(getString(R.string.status_permission_denied))
             }
         }
 
@@ -37,6 +41,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        applyWindowInsets()
         configRepository = BridgeConfigRepository(applicationContext)
 
         binding.startButton.setOnClickListener {
@@ -94,13 +100,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateState(state: BridgeState) {
         val message = when (state) {
-            BridgeState.Idle -> "服务未运行"
-            BridgeState.Starting -> "启动中..."
+            BridgeState.Idle -> getString(R.string.bridge_state_idle)
+            BridgeState.Starting -> getString(R.string.bridge_state_starting)
             is BridgeState.Running -> {
                 val m = state.metrics
-                "UDP:${m.packetsIn} MQTT:${m.parsedPublished} RAW:${m.rawPublished} 设备:${m.deviceCount}"
+                getString(
+                    R.string.bridge_state_running_template,
+                    m.packetsIn,
+                    m.parsedPublished,
+                    m.rawPublished,
+                    m.deviceCount,
+                )
             }
-            is BridgeState.Error -> "错误: ${state.message}"
+            is BridgeState.Error -> getString(R.string.bridge_state_error, state.message)
         }
         updateStatus(message)
     }
@@ -141,6 +153,25 @@ class MainActivity : AppCompatActivity() {
         if (view.text?.toString() != newValue) {
             view.setText(newValue)
             view.setSelection(newValue.length)
+        }
+    }
+
+    private fun applyWindowInsets() {
+        val initialPadding = Rect(
+            binding.root.paddingLeft,
+            binding.root.paddingTop,
+            binding.root.paddingRight,
+            binding.root.paddingBottom,
+        )
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
+            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(
+                initialPadding.left,
+                initialPadding.top + insets.top,
+                initialPadding.right,
+                initialPadding.bottom + insets.bottom,
+            )
+            windowInsets
         }
     }
 }

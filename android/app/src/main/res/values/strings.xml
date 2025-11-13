@@ -1,11 +1,16 @@
 <resources>
-    <string name="app_name">E-Textile Sending Server</string>
-    <string name="bridge_status_title">桥接服务状态</string>
-    <string name="action_start_bridge">启动</string>
-    <string name="action_stop_bridge">停止</string>
-    <string name="bridge_hint">启动后应用会在前台服务中运行 UDP→MQTT 桥接，请确保已授予通知权限并连接到目标局域网。</string>
-    <string name="broker_host_label">Broker 地址 / IP</string>
-    <string name="broker_port_label">Broker 端口</string>
-    <string name="error_broker_host_required">请输入 Broker 地址</string>
-    <string name="error_broker_port_invalid">端口需为 1~65535 的数字</string>
+    <string name="app_name">E-Textile Bridge</string>
+    <string name="bridge_status_title">Bridge Status</string>
+    <string name="action_start_bridge">Start</string>
+    <string name="action_stop_bridge">Stop</string>
+    <string name="bridge_hint">After starting, the app runs the UDP→MQTT bridge as a foreground service. Make sure notification permission is granted and the device is connected to the target LAN.</string>
+    <string name="broker_host_label">Broker Host / IP</string>
+    <string name="broker_port_label">Broker Port</string>
+    <string name="error_broker_host_required">Please enter the broker host</string>
+    <string name="error_broker_port_invalid">Port must be a number between 1 and 65535</string>
+    <string name="status_permission_denied">Notification permission denied. Service can run but cannot stay in the foreground.</string>
+    <string name="bridge_state_idle">Bridge is idle</string>
+    <string name="bridge_state_starting">Starting…</string>
+    <string name="bridge_state_running_template">UDP:%1$d MQTT:%2$d RAW:%3$d Devices:%4$d</string>
+    <string name="bridge_state_error">Error: %1$s</string>
 </resources>

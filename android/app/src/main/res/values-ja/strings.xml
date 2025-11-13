@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">E-Textile ブリッジ</string>
+    <string name="bridge_status_title">ブリッジ状態</string>
+    <string name="action_start_bridge">開始</string>
+    <string name="action_stop_bridge">停止</string>
+    <string name="bridge_hint">開始するとアプリは前面サービスとして UDP→MQTT ブリッジを実行します。通知権限を許可し、対象ネットワークに接続していることを確認してください。</string>
+    <string name="broker_host_label">ブローカー ホスト / IP</string>
+    <string name="broker_port_label">ブローカー ポート</string>
+    <string name="error_broker_host_required">ブローカーのアドレスを入力してください</string>
+    <string name="error_broker_port_invalid">ポートは 1～65535 の数値である必要があります</string>
+    <string name="status_permission_denied">通知権限が拒否されました。サービスは実行できますが前面に常駐できません。</string>
+    <string name="bridge_state_idle">ブリッジは停止しています</string>
+    <string name="bridge_state_starting">起動中…</string>
+    <string name="bridge_state_running_template">UDP:%1$d MQTT:%2$d RAW:%3$d デバイス:%4$d</string>
+    <string name="bridge_state_error">エラー: %1$s</string>
+</resources>

@@ -5,7 +5,9 @@
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="24dp"
+    android:paddingStart="@dimen/layout_padding_horizontal"
+    android:paddingEnd="@dimen/layout_padding_horizontal"
+    android:paddingBottom="@dimen/layout_padding_vertical"
     tools:context=".MainActivity">
 
     <TextView
@@ -27,7 +29,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/statusTitle"
-        tools:text="服务未运行" />
+        tools:text="@string/bridge_state_idle" />
 
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/brokerHostLayout"

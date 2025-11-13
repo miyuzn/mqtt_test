@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">智能织物桥接器</string>
+    <string name="bridge_status_title">桥接服务状态</string>
+    <string name="action_start_bridge">启动</string>
+    <string name="action_stop_bridge">停止</string>
+    <string name="bridge_hint">启动后应用会以前台服务运行 UDP→MQTT 桥接，请确认已授予通知权限并连接到目标局域网。</string>
+    <string name="broker_host_label">Broker 地址 / IP</string>
+    <string name="broker_port_label">Broker 端口</string>
+    <string name="error_broker_host_required">请输入 Broker 地址</string>
+    <string name="error_broker_port_invalid">端口需为 1~65535 的数字</string>
+    <string name="status_permission_denied">已拒绝通知权限，服务仍可运行但无法常驻前台。</string>
+    <string name="bridge_state_idle">桥接服务未运行</string>
+    <string name="bridge_state_starting">正在启动…</string>
+    <string name="bridge_state_running_template">UDP:%1$d MQTT:%2$d RAW:%3$d 设备:%4$d</string>
+    <string name="bridge_state_error">错误：%1$s</string>
+</resources>
