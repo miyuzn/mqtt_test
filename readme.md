@@ -42,6 +42,7 @@ docker compose up -d
 Compose 将自动：
 - 构建 MQTT Broker（基于 mosquitto，提供纯粹的消息转发能力）；
 - 启动 Python Client（自动执行 `sink.py` 完成落盘）；
+- 启动 Raw→Parsed 解析服务（server/raw_parser_service.py），在 Broker 内部把 1883 端口收到的二进制流解析后经 9001 端口发布 JSON；
 - 启动 MQTT → Web 桥接服务（`server/bridge.py`）；
 - 启动 Web 前端（`webapp/`，同时提供实时仪表盘与新的配置调试页面）。
 
@@ -72,6 +73,14 @@ Web 服务会同步订阅 MQTT 数据，并通过 Socket.IO 将压力数据推�
 
 ---
 
+## 🧮 解析链路调整
+
+- Android / PC 侧的 `data_receive.py` 现在默认只发布原始二进制帧到 `etx/v1/raw`，如需本地解析可手动开启 `PUBLISH_PARSED`。
+- `server/raw_parser_service.py` 常驻 Broker 侧：它通过 1883 端口订阅原始流，解析后由 9001（WebSocket）端口重新发布 JSON。
+- Web 仪表盘及其下游继续订阅 `etx/v1/parsed/#`，无需改动，即可自动享受服务端解析带来的性能收益。
+
+---
+
 ## ⚙️ 默认配置说明
 
 项目根目录中包含 `config.ini` 文件，用于定义 UDP 与 MQTT 参数：
@@ -84,6 +93,8 @@ LISTEN_PORT = 13250
 BROKER_HOST = mosquitto
 BROKER_PORT = 1883
 TOPIC_PARSED_PREFIX = etx/v1/parsed
+PUBLISH_RAW = 1
+PUBLISH_PARSED = 0
 
 [CONFIG]
 CMD_TOPIC = etx/v1/config/cmd
@@ -91,6 +102,16 @@ RESULT_TOPIC = etx/v1/config/result
 AGENT_TOPIC = etx/v1/config/agents
 DEVICE_TCP_PORT = 22345
 DEVICE_TCP_TIMEOUT = 3.0
+
+[PARSER]
+RAW_BROKER_HOST = mosquitto
+RAW_BROKER_PORT = 1883
+RAW_TOPIC = etx/v1/raw/#
+PARSED_BROKER_HOST = mosquitto
+PARSED_BROKER_PORT = 9001
+PARSED_TRANSPORT = websockets
+PARSED_TOPIC_PREFIX = etx/v1/parsed
+PARSED_QOS = 1
 ```
 
 如需连接远程 Broker，请修改 `BROKER_HOST` 为服务器 IP 或域名。
@@ -113,6 +134,7 @@ DEVICE_TCP_TIMEOUT = 3.0
 │   └── log/                            # 日志输出
 ├── server/
 │   └── bridge.py                       # 模块3/4：MQTT → Web 实时桥接
+│   └── raw_parser_service.py          # 1883→9001 原始数据解析下行
 ├── webapp/
 │   ├── Dockerfile
 │   ├── app.py                          # 模块5：Flask Web（仪表盘 + 配置调试）
@@ -168,6 +190,7 @@ docker compose up -d --build
 默认服务暴露端口：
 ```
 - MQTT Broker：tcp://localhost:1883
+- Parsed WebSocket：ws://localhost:9001/mqtt (由 parser 服务广播)
 - MQTT-Web 桥接：http://localhost:5001
 - Web 可视化（仪表盘）：http://localhost:5000
 - 配置调试控制台：http://localhost:5002

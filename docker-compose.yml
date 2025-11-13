@@ -11,6 +11,28 @@ services:
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
 
+  parser:
+    build: ./app
+    container_name: mqtt-parser
+    depends_on:
+      - mosquitto
+    environment:
+      - RAW_BROKER_HOST=mosquitto
+      - RAW_BROKER_PORT=1883
+      - RAW_TOPIC=etx/v1/raw/#
+      - RAW_QOS=1
+      - PARSED_BROKER_HOST=mosquitto
+      - PARSED_BROKER_PORT=9001
+      - PARSED_TRANSPORT=websockets
+      - PARSED_WS_PATH=/mqtt
+      - PARSED_TOPIC_PREFIX=etx/v1/parsed
+      - PARSED_QOS=1
+    volumes:
+      - ./app:/app
+      - ./server:/server
+    command: ["python", "/server/raw_parser_service.py"]
+    restart: unless-stopped
+
   mqttcli:
     image: efrecon/mqtt-client
     container_name: mqtt-cli

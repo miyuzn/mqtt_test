@@ -72,8 +72,8 @@ BROKER_PORT     = get_conf("MQTT", "BROKER_PORT", 1883, int)
 CLIENT_ID       = get_conf("MQTT", "CLIENT_ID", _default_client_id)
 TOPIC_RAW       = get_conf("MQTT", "TOPIC_RAW", "etx/v1/raw")
 TOPIC_PARSED_PR = get_conf("MQTT", "TOPIC_PARSED_PREFIX", "etx/v1/parsed")
-PUBLISH_RAW     = get_conf("MQTT", "PUBLISH_RAW", 0, int) == 1
-PUBLISH_PARSED  = get_conf("MQTT", "PUBLISH_PARSED", 1, int) == 1
+PUBLISH_RAW     = get_conf("MQTT", "PUBLISH_RAW", 1, int) == 1
+PUBLISH_PARSED  = get_conf("MQTT", "PUBLISH_PARSED", 0, int) == 1
 MQTT_QOS        = get_conf("MQTT", "MQTT_QOS", 1, int)
 
 # QUEUE
