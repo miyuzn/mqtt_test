@@ -215,7 +215,8 @@ def quick_dn_from_payload(payload: bytes) -> Optional[str]:
     if payload[0] != 0x5A or payload[1] != 0x5A:
         return None
     try:
-        return bytes(payload[2:8]).hex().upper()
+        value = int.from_bytes(payload[2:8], byteorder="little", signed=False)
+        return f"{value:012X}"
     except Exception:
         return None
 
