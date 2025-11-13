@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">E-Textile Sending Server</string>
+    <string name="bridge_status_title">桥接服务状态</string>
+    <string name="action_start_bridge">启动</string>
+    <string name="action_stop_bridge">停止</string>
+    <string name="bridge_hint">启动后应用会在前台服务中运行 UDP→MQTT 桥接，请确保已授予通知权限并连接到目标局域网。</string>
+    <string name="broker_host_label">Broker 地址 / IP</string>
+    <string name="broker_port_label">Broker 端口</string>
+    <string name="error_broker_host_required">请输入 Broker 地址</string>
+    <string name="error_broker_port_invalid">端口需为 1~65535 的数字</string>
+</resources>
