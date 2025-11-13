@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.Context.MODE_PRIVATE
 import android.os.Build
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
 
 /**
  * 简化的配置仓库，后续可接入 DataStore/QR 导入。
@@ -22,7 +24,9 @@ class BridgeConfigRepository(context: Context) {
     suspend fun update(block: (BridgeConfig) -> BridgeConfig) {
         val updated = block(backing.value)
         backing.value = updated
-        persist(updated)
+        withContext(Dispatchers.IO) {
+            persist(updated)
+        }
     }
 
     private fun buildInitialConfig(): BridgeConfig {
@@ -42,7 +46,7 @@ class BridgeConfigRepository(context: Context) {
         prefs.edit()
             .putString(KEY_BROKER_HOST, config.brokerHost)
             .putInt(KEY_BROKER_PORT, config.brokerPort)
-            .apply()
+            .commit()
     }
 
     private fun buildClientId(): String {

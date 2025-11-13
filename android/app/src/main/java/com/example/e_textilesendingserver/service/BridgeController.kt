@@ -1,8 +1,8 @@
 package com.example.e_textilesendingserver.service
 
+import android.util.Log
 import com.example.e_textilesendingserver.core.config.BridgeConfig
 import com.example.e_textilesendingserver.core.config.BridgeConfigRepository
-import com.example.e_textilesendingserver.core.parser.SensorFrame
 import com.example.e_textilesendingserver.core.parser.SensorParser
 import com.example.e_textilesendingserver.core.parser.toJsonBytes
 import com.example.e_textilesendingserver.data.DeviceRegistry
@@ -12,18 +12,25 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.TimeUnit
 import kotlin.math.max
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.coroutineScope
+import kotlin.coroutines.coroutineContext
 import org.json.JSONObject
 
 class BridgeController(
@@ -60,6 +67,7 @@ class BridgeController(
         val registry = DeviceRegistry(config.registryTtlSec)
         val stats = StatsTracker(config, registry)
         val rawAggregator = RawAggregator(config)
+        val packetQueue = PacketQueue(config.queueSize, config.dropOldest)
 
         try {
             mqttBridge.connect(config)
@@ -78,9 +86,12 @@ class BridgeController(
             )
             kotlinx.coroutines.coroutineScope {
                 launch { publishRegistryLoop(config, registry) }
-                launch { subscribeCommands(config, registry, this) }
-                udpLoop(config, registry, stats, rawAggregator)
+                launch { subscribeCommands(config, registry) }
+                launch { udpLoop(config, packetQueue, stats) }
+                launch { mqttWorker(config, registry, stats, rawAggregator, packetQueue) }
             }
+        } catch (ex: CancellationException) {
+            throw ex
         } catch (ex: Exception) {
             BridgeStatusStore.update(BridgeState.Error(ex.message ?: "发生未知错误"))
         } finally {
@@ -93,14 +104,18 @@ class BridgeController(
 
     private suspend fun udpLoop(
         config: BridgeConfig,
-        registry: DeviceRegistry,
+        packetQueue: PacketQueue,
         stats: StatsTracker,
-        rawAggregator: RawAggregator,
     ) = withContext(Dispatchers.IO) {
         val socket = DatagramSocket(null).apply {
             reuseAddress = true
             bind(InetSocketAddress(config.udpListenPort))
-            receiveBufferSize = max(receiveBufferSize, config.udpSocketBufferBytes)
+            runCatching {
+                receiveBufferSize = max(receiveBufferSize, config.udpSocketBufferBytes)
+            }.onFailure {
+                Log.w(TAG, "Unable to set UDP receive buffer: ${it.message}")
+            }
+            soTimeout = SOCKET_POLL_TIMEOUT_MS
         }
         val localForwarder = if (config.udpCopyLocal) DatagramSocket().apply {
             connect(InetSocketAddress(config.localForwardIp, config.localForwardPort))
@@ -108,56 +123,92 @@ class BridgeController(
 
         val buffer = ByteArray(config.udpBufferBytes)
         val datagram = DatagramPacket(buffer, buffer.size)
+        val job = coroutineContext.job
 
         try {
-            while (scope.isActive) {
-                socket.receive(datagram)
+            while (job.isActive) {
+                try {
+                    socket.receive(datagram)
+                } catch (timeout: SocketTimeoutException) {
+                    if (!job.isActive) break
+                    continue
+                } catch (ex: SocketException) {
+                    if (!job.isActive) break else throw ex
+                }
                 val data = datagram.data.copyOf(datagram.length)
                 val address = datagram.address
-                stats.onPacketIn()
-                localForwarder?.send(DatagramPacket(data, data.size))
-                handlePacket(data, address, config, registry, rawAggregator, stats)
+                runCatching {
+                    localForwarder?.send(DatagramPacket(data, data.size))
+                }.onFailure {
+                    Log.w(TAG, "Local UDP forward failed: ${it.message}")
+                }
+                val offered = packetQueue.offer(UdpPacket(data, address))
+                if (!offered) {
+                    stats.onDropped()
+                }
             }
         } finally {
-            rawAggregator.flushRemaining { topic, payload, count ->
-                mqttBridge.publish(topic, payload, config.mqttQos)
-                stats.onRawPublished(payloadCount = count)
-            }
             socket.close()
             localForwarder?.close()
         }
     }
 
-    private suspend fun handlePacket(
-        payload: ByteArray,
-        address: InetAddress,
+    private suspend fun mqttWorker(
         config: BridgeConfig,
         registry: DeviceRegistry,
-        rawAggregator: RawAggregator,
         stats: StatsTracker,
-    ) {
-        if (config.publishRaw) {
-            rawAggregator.enqueue(payload) { topic, body, count ->
-                mqttBridge.publish(topic, body, config.mqttQos)
-                stats.onRawPublished(count)
-            }
+        rawAggregator: RawAggregator,
+        packetQueue: PacketQueue,
+    ) = withContext(Dispatchers.IO) {
+        val pollTimeout = max(config.batchMaxMs, PACKET_POLL_TIMEOUT_MS)
+        val rawPublisher: suspend (ByteArray, Int) -> Unit = { payload, count ->
+            mqttBridge.publish(config.topicRaw, payload, config.mqttQos)
+            stats.onRawPublished(count)
         }
-        if (config.publishParsed) {
-            val frame = parser.parse(payload)
-            if (frame != null) {
-                val host = address.hostAddress
-                if (!host.isNullOrBlank()) {
-                    registry.record(frame.dn, host)
+
+        try {
+            while (scope.isActive) {
+                val packet = packetQueue.poll(pollTimeout)
+                if (packet == null) {
+                    rawAggregator.flushIfTimedOut(rawPublisher)
+                    stats.maybeEmit()
+                    continue
                 }
-                val topic = "${config.topicParsedPrefix.trimEnd('/')}/${frame.dn}"
-                val jsonBytes = frame.toJsonBytes()
-                mqttBridge.publish(topic, jsonBytes, config.mqttQos)
-                stats.onParsedPublished()
-            } else {
-                stats.onParseError()
+
+                stats.onPacketIn()
+                val payload = packet.payload
+                if (config.publishRaw) {
+                    rawAggregator.enqueue(payload, rawPublisher)
+                }
+
+                if (config.publishParsed) {
+                    val frame = parser.parse(payload)
+                    if (frame != null) {
+                        val host = packet.address.hostAddress
+                        if (!host.isNullOrBlank()) {
+                            registry.record(frame.dn, host)
+                        }
+                        val topic = "${config.topicParsedPrefix.trimEnd('/')}/${frame.dn}"
+                        val jsonBytes = frame.toJsonBytes()
+                        mqttBridge.publish(topic, jsonBytes, config.mqttQos)
+                        stats.onParsedPublished()
+                    } else {
+                        stats.onParseError()
+                    }
+                } else {
+                    val metadata = parser.peekMetadata(payload)
+                    val host = packet.address.hostAddress
+                    if (metadata != null && !host.isNullOrBlank()) {
+                        registry.record(metadata.dn, host)
+                    }
+                }
+
+                rawAggregator.flushIfTimedOut(rawPublisher)
+                stats.maybeEmit()
             }
+        } finally {
+            rawAggregator.flushRemaining(rawPublisher)
         }
-        stats.maybeEmit()
     }
 
     private suspend fun publishRegistryLoop(config: BridgeConfig, registry: DeviceRegistry) {
@@ -184,9 +235,8 @@ class BridgeController(
     private suspend fun subscribeCommands(
         config: BridgeConfig,
         registry: DeviceRegistry,
-        callbackScope: CoroutineScope,
     ) {
-        mqttBridge.subscribe(config.configCmdTopic, callbackScope) { publish ->
+        mqttBridge.subscribe(config.configCmdTopic, scope) { publish ->
             val payloadBytes = publish.payloadAsBytes
             val payload = runCatching {
                 JSONObject(String(payloadBytes, Charsets.UTF_8))
@@ -199,10 +249,11 @@ class BridgeController(
                 )
                 return@subscribe
             }
-            callbackScope.launch {
+            scope.launch {
                 handleCommand(payload, config, registry)
             }
         }
+        awaitCancellation()
     }
 
     private suspend fun handleCommand(
@@ -316,49 +367,54 @@ class BridgeController(
     ) {
         private val batch = ArrayList<ByteArray>()
         private var batchStart = 0L
+        private val separator = if (config.batchSeparator.equals("NL", true)) "\n".toByteArray() else ByteArray(0)
 
         suspend fun enqueue(
             payload: ByteArray,
-            publisher: suspend (topic: String, body: ByteArray, count: Int) -> Unit,
+            publisher: suspend (ByteArray, Int) -> Unit,
         ) {
             if (!config.publishRaw) return
             if (batch.isEmpty()) {
                 batchStart = System.currentTimeMillis()
             }
             batch.add(payload)
-            if (shouldFlush()) {
+            if (batch.size >= config.batchMaxItems) {
+                flush(publisher)
+            }
+        }
+
+        suspend fun flushIfTimedOut(
+            publisher: suspend (ByteArray, Int) -> Unit,
+        ) {
+            if (batch.isEmpty()) return
+            val elapsed = System.currentTimeMillis() - batchStart
+            if (elapsed >= config.batchMaxMs) {
                 flush(publisher)
             }
         }
 
         suspend fun flushRemaining(
-            publisher: suspend (topic: String, body: ByteArray, count: Int) -> Unit,
+            publisher: suspend (ByteArray, Int) -> Unit,
         ) {
             flush(publisher)
         }
 
-        private fun shouldFlush(): Boolean {
-            if (batch.size >= config.batchMaxItems) return true
-            val elapsed = System.currentTimeMillis() - batchStart
-            return elapsed >= config.batchMaxMs
-        }
-
         private suspend fun flush(
-            publisher: suspend (topic: String, body: ByteArray, count: Int) -> Unit,
+            publisher: suspend (ByteArray, Int) -> Unit,
         ) {
-            if (batch.isEmpty()) return
+            if (batch.isEmpty() || !config.publishRaw) return
             val body = joinBatch()
-            publisher(config.topicRaw, body, batch.size)
+            val count = batch.size
             batch.clear()
             batchStart = 0L
+            publisher(body, count)
         }
 
         private fun joinBatch(): ByteArray {
-            if (batch.size == 1 && config.batchSeparator.equals("NONE", true)) {
+            if (batch.size == 1 && separator.isEmpty()) {
                 return batch.first()
             }
-            val separator = if (config.batchSeparator.equals("NL", true)) "\n".toByteArray() else ByteArray(0)
-            val total = batch.sumOf { it.size } + separator.size * (batch.size - 1)
+            val total = batch.sumOf { it.size } + separator.size * max(batch.size - 1, 0)
             val result = ByteArray(total)
             var offset = 0
             batch.forEachIndexed { index, bytes ->
@@ -396,6 +452,10 @@ class BridgeController(
             raw += payloadCount
         }
 
+        fun onDropped() {
+            dropped++
+        }
+
         fun onParseError() {
             parseErrors++
         }
@@ -418,6 +478,48 @@ class BridgeController(
                     )
                 )
             )
+        }
+    }
+
+    companion object {
+        private const val TAG = "BridgeController"
+        private const val SOCKET_POLL_TIMEOUT_MS = 500
+        private const val PACKET_POLL_TIMEOUT_MS = 100L
+    }
+
+    private data class UdpPacket(
+        val payload: ByteArray,
+        val address: InetAddress,
+    )
+
+    private class PacketQueue(
+        capacity: Int,
+        private val dropOldest: Boolean,
+    ) {
+        private val queue = ArrayBlockingQueue<UdpPacket>(max(1, capacity))
+
+        fun offer(packet: UdpPacket): Boolean {
+            if (queue.offer(packet)) {
+                return true
+            }
+            if (dropOldest) {
+                queue.poll()
+                return queue.offer(packet)
+            }
+            return false
+        }
+
+        fun poll(timeoutMs: Long): UdpPacket? {
+            return try {
+                if (timeoutMs <= 0) {
+                    queue.poll()
+                } else {
+                    queue.poll(timeoutMs, TimeUnit.MILLISECONDS)
+                }
+            } catch (ex: InterruptedException) {
+                Thread.currentThread().interrupt()
+                null
+            }
         }
     }
 }

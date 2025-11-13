@@ -22,6 +22,7 @@ class MqttBridge {
             .identifier(config.clientId)
             .serverHost(config.brokerHost)
             .serverPort(config.brokerPort)
+            .automaticReconnectWithDefaultConfig()
             .buildAsync()
         mqttClient.connectWith()
             .keepAlive(30)

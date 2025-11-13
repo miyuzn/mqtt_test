@@ -13,7 +13,21 @@ data class SensorFrame(
     val accelerometer: FloatArray,
 )
 
+data class FrameMetadata(
+    val dn: String,
+    val timestampSeconds: Double?,
+)
+
 class SensorParser {
+
+    fun peekMetadata(packet: ByteArray): FrameMetadata? {
+        if (packet.size < MIN_HEADER_SIZE) return null
+        if (packet[0] != START_MARKER || packet[1] != START_MARKER) return null
+        val dnValue = parseDn(packet)
+        val dn = String.format("%012X", dnValue and 0xFFFFFFFFFFFF)
+        val ts = runCatching { parseTimestamp(packet) }.getOrNull()
+        return FrameMetadata(dn = dn, timestampSeconds = ts)
+    }
 
     fun parse(packet: ByteArray): SensorFrame? {
         if (packet.size < MIN_PACKET_SIZE) return null
@@ -84,7 +98,8 @@ class SensorParser {
     }
 
     companion object {
-        private const val MIN_PACKET_SIZE = 2 + 6 + 1 + 4 + 2 + 36 + 2
+        private const val MIN_HEADER_SIZE = 2 + 6 + 1 + 4 + 2
+        private const val MIN_PACKET_SIZE = MIN_HEADER_SIZE + 36 + 2
         private val START_MARKER: Byte = 0x5A
         private val END_MARKER: Byte = 0xA5.toByte()
     }
