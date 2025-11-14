@@ -643,7 +643,8 @@ class BridgeController(
             immediate: Boolean,
         ) {
             val intervalMs = config.gcuHeartbeatIntervalSec * 1000L
-            if (!immediate && now - session.lastSubscribe < intervalMs) {
+            val shouldForce = immediate && session.lastSubscribe == 0L
+            if (!shouldForce && now - session.lastSubscribe < intervalMs) {
                 return
             }
             session.lastSubscribe = now
