@@ -347,7 +347,7 @@ def dn_to_hex(dn):
     elif isinstance(dn, (tuple, list)):
         b = bytes(dn)
     elif isinstance(dn, int):
-        b = dn.to_bytes(6, byteorder="big", signed=False)
+        b = dn.to_bytes(6, byteorder="little", signed=False)
     elif isinstance(dn, str):
         hex_str = dn.replace(" ", "").replace("-", "")
         b = bytes.fromhex(hex_str[-12:].rjust(12, "0"))

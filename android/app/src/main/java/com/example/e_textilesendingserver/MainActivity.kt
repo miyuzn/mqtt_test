@@ -1,6 +1,7 @@
 package com.example.e_textilesendingserver
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Rect
@@ -18,6 +19,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.e_textilesendingserver.core.config.BridgeConfigRepository
 import com.example.e_textilesendingserver.databinding.ActivityMainBinding
+import com.example.e_textilesendingserver.provisioning.BleProvisionActivity
+import com.example.e_textilesendingserver.provisioning.ProvisioningConstants
 import com.example.e_textilesendingserver.service.BridgeService
 import com.example.e_textilesendingserver.service.BridgeState
 import com.example.e_textilesendingserver.service.BridgeStatusStore
@@ -37,6 +40,22 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    private val provisioningLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val data = result.data
+                if (data?.getBooleanExtra(ProvisioningConstants.EXTRA_RESULT_PROVISIONED, false) == true) {
+                    val ssid = data.getStringExtra(ProvisioningConstants.EXTRA_RESULT_SSID).orEmpty()
+                    val message = if (ssid.isNotEmpty()) {
+                        getString(R.string.provision_result_success, ssid)
+                    } else {
+                        getString(R.string.provision_title)
+                    }
+                    updateStatus(message)
+                }
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -45,6 +64,9 @@ class MainActivity : AppCompatActivity() {
         applyWindowInsets()
         configRepository = BridgeConfigRepository(applicationContext)
 
+        binding.provisionButton.setOnClickListener {
+            openProvisioning()
+        }
         binding.startButton.setOnClickListener {
             val endpoint = validateBrokerInput() ?: return@setOnClickListener
             lifecycleScope.launch {
@@ -75,6 +97,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun openProvisioning() {
+        val intent = Intent(this, BleProvisionActivity::class.java)
+        provisioningLauncher.launch(intent)
     }
 
     private fun requestNotificationPermissionIfNeeded() {
