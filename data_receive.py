@@ -122,16 +122,6 @@ command_queue: "queue.Queue[dict]" = queue.Queue()
 
 # Payload constraints (validated by downstream hardware) / 配置负载限制（由下游硬件自行校验）
 
-gcu_manager = SubscriptionManager(
-    enabled=GCU_ENABLED,
-    subscribe_token=GCU_SUBSCRIBE_TOKEN,
-    ack_token=GCU_ACK_TOKEN,
-    broadcast_token=GCU_BROADCAST_TOKEN,
-    heartbeat_sec=GCU_HEARTBEAT_SEC,
-    fallback_sec=GCU_FALLBACK_SEC,
-    send_broadcast_on_exit=GCU_SEND_BROADCAST_ON_EXIT,
-)
-
 class SubscriptionManager:
     """Maintain GCU subscription handshakes and heartbeats.
     负责与 GCU 设备的订阅/心跳握手，确保广播 -> 单播顺利转换。
@@ -256,6 +246,15 @@ class SubscriptionManager:
                         self._send(self.subscribe_payload, addr)
                         session["last_sub"] = now
 
+gcu_manager = SubscriptionManager(
+    enabled=GCU_ENABLED,
+    subscribe_token=GCU_SUBSCRIBE_TOKEN,
+    ack_token=GCU_ACK_TOKEN,
+    broadcast_token=GCU_BROADCAST_TOKEN,
+    heartbeat_sec=GCU_HEARTBEAT_SEC,
+    fallback_sec=GCU_FALLBACK_SEC,
+    send_broadcast_on_exit=GCU_SEND_BROADCAST_ON_EXIT,
+)
 
 def install_signals():
     def _handler(sig, frame):
