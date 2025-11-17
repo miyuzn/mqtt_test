@@ -93,6 +93,13 @@ def load_config() -> dict:
     env = os.getenv
     cfg["MQTT_BROKER_HOST"] = env("MQTT_BROKER_HOST", cfg["MQTT_BROKER_HOST"])
     cfg["MQTT_BROKER_PORT"] = int(env("MQTT_BROKER_PORT", str(cfg["MQTT_BROKER_PORT"])))
+    # 兼容 docker-compose 中沿用的 BROKER_HOST/BROKER_PORT 命名
+    alt_host = env("BROKER_HOST")
+    if alt_host:
+        cfg["MQTT_BROKER_HOST"] = alt_host
+    alt_port = env("BROKER_PORT")
+    if alt_port:
+        cfg["MQTT_BROKER_PORT"] = int(alt_port)
     cfg["MQTT_SUB_TOPIC"]   = env("MQTT_SUB_TOPIC", cfg["MQTT_SUB_TOPIC"])
     cfg["CLIENT_ID"]        = env("CLIENT_ID", cfg["CLIENT_ID"])
     cfg["ROOT_DIR"]         = env("SINK_ROOT_DIR", cfg["ROOT_DIR"])

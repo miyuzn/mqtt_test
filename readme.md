@@ -51,6 +51,34 @@ Compose 将自动：
 docker ps
 ```
 
+---
+
+## 🧱 Transfer / Processing 分离部署
+
+若需要像 `sys_stru.png` 中那样将 Broker/Bridge/Parser 部署在 **Transfer Server**，将 PyClient 落盘与 Web UI 部署在 **Data Processing Server**，可使用下面两个 Compose 文件：
+
+### Transfer Server（MQTT Broker + Parser + Bridge）
+```bash
+docker compose -f docker-compose.transfer.yml up -d
+```
+- 该 compose 会启动 `mosquitto`、`parser`、`bridge` 三个容器，并将 1883、9001、5001 端口暴露给 Processing Server 使用；
+- 不需要额外 IP 配置，Transfer Server 的公网/内网地址由宿主机决定，供其它服务器引用。
+
+### Data Processing Server（PyClient 落盘 + Web）
+1. 复制示例环境文件并填写 **Transfer Server 的 IP 或域名**：
+   ```bash
+   cp .env.processing.example .env.processing
+   ```
+   - `TRANSFER_MQTT_HOST`：Transfer Server 上 mosquitto 暴露的地址；
+   - `BRIDGE_API_BASE_URL`：Transfer Server 上 bridge HTTP 服务地址。
+2. 运行：
+   ```bash
+   docker compose --env-file .env.processing -f docker-compose.processing.yml up -d
+   ```
+- `.env.processing` 中即可指定 Processing Server 需要连接的 Transfer Server IP；若未来 Bridge、Broker 再次拆分，只需把对应地址改成新的服务器。
+
+> 如仍需本机一键启动全部容器，可继续使用 `docker-compose.yml`。
+
 ### 4️⃣ 访问实时监控仪表盘
 
 Web 服务会同步订阅 MQTT 数据，并通过 Socket.IO 将压力数据推送至浏览器。默认访问地址：
