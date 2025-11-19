@@ -1,84 +1,165 @@
-# Devmin Quickstart / Devmin クイックスタート / Devmin 快速上手
+# Devmin Guide (English)
 
-> Developers only. This README focuses on the **devmin** stack (parser + sink + web containers, local collector).
+> Developer-focused instructions for running the minimal parser + sink + web stack and collecting sensor data locally.
 
----
+## 1. Clone & prerequisites
+1. `git clone https://github.com/miyuzn/mqtt_test.git && cd mqtt_test`
+2. Install Docker Desktop (Engine + Compose) and Python 3.11.
+3. Verify:
+   ```bash
+   docker --version
+   docker compose version
+   python --version
+   ```
 
-## 1. Clone & prerequisites / クローンと前提 / 克隆与前置
+## 2. Launch devmin containers
+1. (Optional) `cp devmin/.env.example devmin/.env` and adjust ports if needed.
+2. Start parser + sink + web:
+   ```bash
+   docker compose -f devmin/docker-compose.yml up -d --build
+   ```
+3. Inspect logs:
+   ```bash
+   docker compose -f devmin/docker-compose.yml logs -f parser sink web
+   ```
 
-- **EN:** `git clone https://github.com/miyuzn/mqtt_test.git && cd mqtt_test`. Install Docker Desktop (Engine + Compose) and Python 3.11 (for local collector).
-- **JP:** `git clone https://github.com/miyuzn/mqtt_test.git && cd mqtt_test` を実行し、Docker Desktop（Engine + Compose）と Python 3.11 をインストールしてください。
-- **CN:** 执行 `git clone https://github.com/miyuzn/mqtt_test.git && cd mqtt_test`，并确保本机已安装 Docker Desktop（Engine + Compose）与 Python 3.11。
-
-Verify with / 動作確認 / 验证：
-```bash
-docker --version
-docker compose version
-python --version
-```
-
----
-
-## 2. Launch devmin containers / devmin コンテナ起動 / 启动 devmin 容器
-
-- **EN:** (optional) copy `devmin/.env.example` → `devmin/.env` to customize ports. Then:
-  ```bash
-  docker compose -f devmin/docker-compose.yml up -d --build
-  ```
-- **JP:** 必要に応じ `devmin/.env.example` を `devmin/.env` にコピーしポートを調整後、上記コマンドを実行します。
-- **CN:** 如需自定义端口，可先复制 `devmin/.env.example` 为 `devmin/.env`。之后执行同一命令即可启动 parser/sink/web 三个容器。
-
-Check logs / ログ確認 / 查看日志：
-```bash
-docker compose -f devmin/docker-compose.yml logs -f parser sink web
-```
-
----
-
-## 3. Start local collector / ローカル収集プロセス / 启动本地采集
-
-1. **EN:** Create venv + install deps once:
+## 3. Run local collector
+1. Prepare virtual environment (first time only):
    ```bash
    python -m venv .venv
-   .\.venv\Scripts\activate  # Windows PowerShell
+   .\.venv\Scripts\activate
    pip install -r app/requirements.txt
    ```
-2. **JP:** その後 `python devmin/data_receive_local.py` を実行。`CONFIG_PATH` は自動的に `devmin/config/data_receive.dev.ini` へ設定され、MQTT は `127.0.0.1:1883` に接続します。
-3. **CN:** 运行 `python devmin/data_receive_local.py` 即视为开始收数，按 `Ctrl+C` 结束（脚本会提示“采集终止”）。
+2. Start collector (uses `devmin/config/data_receive.dev.ini`, connects to `127.0.0.1:1883`):
+   ```bash
+   python devmin/data_receive_local.py
+   ```
+3. `Ctrl+C` stops collection; CSV outputs appear under `devmin/data/mqtt_store/<DN>/<YYYYMMDD>/`.
 
-采集生命周期 / 収集ライフサイクル / Collection lifecycle:
-- Start script ⇒ sensors begin streaming via UDP → MQTT.
-- `Ctrl+C` ⇒ collector stops, sink flushes CSV to `devmin/data/mqtt_store/<DN>/<YYYYMMDD>/`.
-
----
-
-## 4. Receive data & verify / データ受信確認 / 数据校验
-
-- **EN:** CSV files appear under `devmin/data/mqtt_store`. Tail them or open in Python to confirm content. Example:
+## 4. Verify data
+- Tail CSV files or monitor sink logs:
   ```bash
-  Get-Content devmin/data/mqtt_store/<DN>/<DAY>/<time>.csv
+  docker compose -f devmin/docker-compose.yml logs -f sink
   ```
-- **JP:** `docker compose -f devmin/docker-compose.yml logs -f sink` を見ると `[MQTT] connected` や `[STATS] rows_written=...` が表示され、書き込み状況を確認できます。
-- **CN:** 若未看到新文件，请检查 `python devmin/data_receive_local.py` 输出以及 `sink` 日志，确认订阅主题 `etx/v1/raw/#` 正在接收数据。
+- Ensure `data_receive_local.py` prints incoming packets; check `devmin/data/mqtt_store` for per-DN folders.
 
----
+## 5. Frontend & console (optional)
+- Dashboard: `http://localhost:5000`
+- Config console: `http://localhost:5002`
 
-## 5. (Optional) Frontend & console / 付録：前端・コンソール / 附加：前端与控制台
+The console lists DN/IP mappings reported by collector instances and allows sending configuration commands.
 
-- **EN:** The web container exposes:
-  - Dashboard: http://localhost:${DEVMIN_WEB_PORT:-5000}
-  - Config console: http://localhost:${DEVMIN_CONSOLE_PORT:-5002}
-  - Bridge API: http://localhost:${DEVMIN_BRIDGE_PORT:-5001}
-- **JP:** ブラウザで上記 URL にアクセスするとリアルタイム可視化や設定下発を確認できます。MQTT ブリッジ (port 5001) へ REST でアクセスすることも可能です。
-- **CN:** 这些页面需在 devmin 容器运行时访问；控制台会读取 `data_receive.py` 上报的设备映射，以列出 DN/IP 并发送配置指令。
-
----
-
-## 6. Stop / cleanup / 停止 / 停止
-
+## 6. Stop / cleanup
 ```bash
 docker compose -f devmin/docker-compose.yml down
 ```
-- **EN:** Collector script stops with `Ctrl+C`.
-- **JP:** 収集停止後 `sink` が自動で CSV を閉じます。
-- **CN:** 可按需删除 `devmin/data/mqtt_store` 中旧数据，或通过 Git 忽略保持本地数据不提交。
+- Collector exits via `Ctrl+C`.
+- Remove `devmin/data/mqtt_store` if you want to clear stored data.
+
+---
+
+# Devmin ガイド（日本語）
+
+> 開発者向け。parser + sink + web の最小構成を起動し、ローカルでセンサデータを取得するまでの手順です。
+
+## 1. クローンと前提環境
+1. `git clone https://github.com/miyuzn/mqtt_test.git && cd mqtt_test`
+2. Docker Desktop（Engine + Compose）と Python 3.11 をインストール。
+3. 下記を実行して確認：
+   ```bash
+   docker --version
+   docker compose version
+   python --version
+   ```
+
+## 2. devmin コンテナ起動
+1. 必要に応じ `cp devmin/.env.example devmin/.env` でポート設定を変更。
+2. parser + sink + web を起動：
+   ```bash
+   docker compose -f devmin/docker-compose.yml up -d --build
+   ```
+3. ログ確認：
+   ```bash
+   docker compose -f devmin/docker-compose.yml logs -f parser sink web
+   ```
+
+## 3. ローカル収集プロセス
+1. 初回のみ仮想環境を作成：
+   ```bash
+   python -m venv .venv
+   .\.venv\Scripts\activate
+   pip install -r app/requirements.txt
+   ```
+2. `python devmin/data_receive_local.py` を実行すると収集開始。`CONFIG_PATH` は `devmin/config/data_receive.dev.ini`、MQTT は `127.0.0.1:1883` へ接続。
+3. `Ctrl+C` で停止すると、CSV が `devmin/data/mqtt_store/<DN>/<YYYYMMDD>/` に保存されます。
+
+## 4. 受信確認
+- `docker compose -f devmin/docker-compose.yml logs -f sink` で `[MQTT] connected` や `[STATS] rows_written=...` を確認。
+- `devmin/data/mqtt_store` に DN ごとのフォルダが生成されているかチェック。
+
+## 5. フロントエンド/コンソール（任意）
+- ダッシュボード: `http://localhost:5000`
+- 設定コンソール: `http://localhost:5002`
+
+設定コンソールでは collector が報告する DN/IP リストを基にコマンドを送信できます。
+
+## 6. 停止
+```bash
+docker compose -f devmin/docker-compose.yml down
+```
+- 収集スクリプトは `Ctrl+C` で終了。
+- 必要に応じ `devmin/data/mqtt_store` を削除し、データをリセットします。
+
+---
+
+# Devmin 指南（中文）
+
+> 面向开发者的说明：使用 devmin（parser + sink + web）最小栈，在本地快速收取传感器数据。
+
+## 1. 克隆与准备
+1. `git clone https://github.com/miyuzn/mqtt_test.git && cd mqtt_test`
+2. 安装 Docker Desktop（Engine + Compose）与 Python 3.11。
+3. 验证：
+   ```bash
+   docker --version
+   docker compose version
+   python --version
+   ```
+
+## 2. 启动 devmin 容器
+1. 可选：`cp devmin/.env.example devmin/.env` 并调整端口。
+2. 启动 parser + sink + web：
+   ```bash
+   docker compose -f devmin/docker-compose.yml up -d --build
+   ```
+3. 查看日志：
+   ```bash
+   docker compose -f devmin/docker-compose.yml logs -f parser sink web
+   ```
+
+## 3. 本地采集
+1. 首次执行需创建虚拟环境：
+   ```bash
+   python -m venv .venv
+   .\.venv\Scripts\activate
+   pip install -r app/requirements.txt
+   ```
+2. 运行 `python devmin/data_receive_local.py`，自动使用 `devmin/config/data_receive.dev.ini`，并连接本机 `127.0.0.1:1883`。
+3. `Ctrl+C` 结束采集；CSV 会写入 `devmin/data/mqtt_store/<DN>/<YYYYMMDD>/`。
+
+## 4. 数据校验
+- `docker compose -f devmin/docker-compose.yml logs -f sink` 可查看写入状态。
+- 检查 `devmin/data/mqtt_store` 中是否出现对应 DN 的 CSV 文件。
+
+## 5. 前端与控制台（可选）
+- 仪表盘: `http://localhost:5000`
+- 配置控制台: `http://localhost:5002`
+
+控制台会根据 `data_receive.py` 上报的 DN/IP 映射发送配置指令。
+
+## 6. 停止与清理
+```bash
+docker compose -f devmin/docker-compose.yml down
+```
+- 采集脚本通过 `Ctrl+C` 退出。
+- 可随时清理 `devmin/data/mqtt_store`，避免旧数据占用空间。
