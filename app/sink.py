@@ -150,8 +150,10 @@ class CsvHandle:
         if self.f is None: self._ensure_open()
         p = list(pressures[:self.sn]); 
         if len(p) < self.sn: p.extend([0]*(self.sn-len(p)))
-        def v3(x): 
-            x = (x or [0,0,0]) + [0,0,0]; return x[:3]
+        def v3(x):
+            base = list(x) if isinstance(x, (list, tuple)) else list(x or [0,0,0])
+            base += [0,0,0]
+            return base[:3]
         row = [ts] + p + v3(mag) + v3(gyro) + v3(acc)
         self.writer.writerow(row); self.rows_since_flush += 1
         if self.rows_since_flush >= flush_every: self.f.flush(); self.rows_since_flush = 0
