@@ -1,0 +1,4 @@
+Flask==2.3.3
+Flask-SocketIO==5.3.6
+requests==2.31.0
+paho-mqtt==2.1.0
