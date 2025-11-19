@@ -35,6 +35,13 @@ def main() -> None:
     config_path = devmin_dir / "config" / "data_receive.dev.ini"
     _set_default_env("CONFIG_PATH", str(config_path))
 
+    root_str = str(repo_root)
+    app_str = str(repo_root / "app")
+    if root_str not in sys.path:
+        sys.path.insert(0, root_str)
+    if app_str not in sys.path:
+        sys.path.insert(0, app_str)
+
     mqtt_host = os.getenv("MQTT_BROKER_HOST") or os.getenv("BROKER_HOST") or "127.0.0.1"
     mqtt_port = os.getenv("MQTT_BROKER_PORT") or os.getenv("BROKER_PORT") or "1883"
 
