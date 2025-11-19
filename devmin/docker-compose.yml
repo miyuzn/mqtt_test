@@ -37,6 +37,24 @@ services:
       - "127.0.0.1:${DEVMIN_MQTT_PORT:-1883}:1883"
       - "127.0.0.1:${DEVMIN_MQTT_WS_PORT:-9001}:9001"
 
+  sink:
+    build:
+      context: ..
+      dockerfile: devmin/sink.Dockerfile
+    container_name: devmin-sink
+    depends_on:
+      - parser
+    environment:
+      MQTT_BROKER_HOST: parser
+      MQTT_BROKER_PORT: 1883
+      MQTT_SUB_TOPIC: etx/v1/raw/#
+      SINK_FLUSH_EVERY_ROWS: 1
+      SINK_ROOT_DIR: /workspace/data/mqtt_store
+    volumes:
+      - ../app:/workspace/app
+      - ../config.ini:/workspace/config.ini:ro
+      - ./data/mqtt_store:/workspace/data/mqtt_store
+
   web:
     build:
       context: ..
@@ -49,7 +67,7 @@ services:
       BROKER_FORWARD_PORT: 1883
       BROKER_LOCAL_PORT: 1883
       BROKER_FORWARD_ENABLED: 1
-      BROKER_HOST: localhost
+      BROKER_HOST: parser
       BROKER_PORT: 1883
       MQTT_SUB_TOPIC: etx/v1/parsed/#
       BRIDGE_PORT: ${DEVMIN_BRIDGE_PORT:-5001}

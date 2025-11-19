@@ -7,10 +7,9 @@ log() {
 
 MOSQUITTO_PID=""
 PARSER_PID=""
-SINK_PID=""
 
 stop_all() {
-  for pid in "${MOSQUITTO_PID}" "${PARSER_PID}" "${SINK_PID}"; do
+  for pid in "${MOSQUITTO_PID}" "${PARSER_PID}"; do
     if [[ -n "${pid}" ]]; then
       kill "${pid}" 2>/dev/null || true
     fi
@@ -48,18 +47,14 @@ wait_for_port() {
 
 wait_for_port "127.0.0.1" "${MQTT_BROKER_PORT:-1883}"
 
-export PYTHONPATH="/workspace/app:${PYTHONPATH:-}"
+export PYTHONPATH="/workspace/app:/workspace/server:${PYTHONPATH:-}"
 
 log "starting raw_parser_service"
 python /workspace/server/raw_parser_service.py &
 PARSER_PID=$!
 
-log "starting sink.py"
-python /workspace/app/sink.py &
-SINK_PID=$!
-
 set +e
-wait -n "${MOSQUITTO_PID}" "${PARSER_PID}" "${SINK_PID}"
+wait -n "${MOSQUITTO_PID}" "${PARSER_PID}"
 STATUS=$?
 set -e
 stop_all
