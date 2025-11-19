@@ -8,12 +8,15 @@
 
 ```
 devmin/
+ ├─ data_receive_local.py     # 本地主机运行 data_receive.py 的入口
  ├─ parser_store.Dockerfile   # mosquitto + raw_parser_service + sink
  ├─ webstack.Dockerfile       # bridge + webapp(app.py/config console)
  ├─ docker-compose.yml        # 仅 parser + web 两个服务
  ├─ .env.example              # 可选端口映射配置
  ├─ scripts/                  # 多进程入口脚本
  ├─ requirements/             # Web/Bridge 组合依赖
+ ├─ config/
+ │   └─ data_receive.dev.ini  # devmin 默认配置（MQTT=127.0.0.1:1883）
  └─ data/                     # 默认挂载目录（mqtt_store、mosquitto 数据）
 ```
 
@@ -39,19 +42,19 @@ devmin/
    docker compose -f devmin/docker-compose.yml up -d --build
    ```
 
-3. **在宿主机启动 `data_receive.py`（采集起点）**  
-   - 准备虚拟环境并安装依赖：
+3. **在宿主机启动 `data_receive_local.py`（采集起点）**  
+   - 准备虚拟环境并安装依赖（首次执行）：
      ```powershell
      python -m venv .venv
      .\.venv\Scripts\activate
      pip install -r app/requirements.txt
      ```
-   - 确认 `config.ini` 中 `[MQTT] BROKER_HOST` 改为 `127.0.0.1`（或设置环境变量 `MQTT_BROKER_HOST=127.0.0.1`）。
-   - 运行：
+   - 启动脚本（默认加载 `devmin/config/data_receive.dev.ini` 并连接 `127.0.0.1:1883`）：
      ```powershell
-     python data_receive.py
+     .\.venv\Scripts\activate               # 如尚未激活
+     python devmin/data_receive_local.py
      ```
-   - 当需要结束采集时，`Ctrl+C` 即为采集终点。
+   - 需要结束采集时，按 `Ctrl+C` 即可终止。
 
 4. **访问页面**
    - 仪表盘：http://localhost:${DEVMIN_WEB_PORT:-5000}
@@ -73,15 +76,13 @@ devmin/
 
 ## 宿主机采集端注意事项
 
-1. **MQTT 目标**：`data_receive.py` 的 `BROKER_HOST` 应配置为 `127.0.0.1`，端口与 `DEVMIN_MQTT_PORT` 一致（默认为 1883）。文件配置优先：  
-   ```ini
-   [MQTT]
-   BROKER_HOST = 127.0.0.1
-   BROKER_PORT = 1883
-   ```
-   或在启动前 `setx MQTT_BROKER_HOST 127.0.0.1`。
-2. **UDP 监听**：采集端仍在宿主机执行，可继续监听 0.0.0.0:13250 等端口，不再受到容器网络限制。
-3. **打点时间段**：`python data_receive.py` 启动时即视为采集开始，按 `Ctrl+C` 结束（脚本会捕获信号并做清理）。
+1. **推荐入口**：优先通过 `python devmin/data_receive_local.py` 启动，它会：
+   - 将 `CONFIG_PATH` 指向 `devmin/config/data_receive.dev.ini`；
+   - 如果未设置 `MQTT_BROKER_HOST/BROKER_HOST`，自动指向 `127.0.0.1`；
+   - 支持继续使用环境变量覆盖端口或其他配置。
+2. **配置自定义**：若需手动运行 `python data_receive.py`，请确保 `CONFIG_PATH` 或 `[MQTT] BROKER_HOST` 与 parser 容器暴露的端口一致。
+3. **UDP 监听**：采集端运行在宿主机，可继续监听 0.0.0.0:13250 等端口，不再受容器网络限制。
+4. **采集窗口**：执行脚本即视为采集开始，`Ctrl+C` 为采集终点（devmin 脚本会打印友好提示）。
 
 ## 常见定制
 
