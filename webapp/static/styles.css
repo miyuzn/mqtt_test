@@ -49,6 +49,19 @@ code {
   cursor: pointer;
 }
 
+.range-active-indicator {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+.range-active-indicator strong {
+  font-size: 1.4rem;
+  color: #212529;
+}
+
 .dual-heatmap-grid {
   display: grid;
   gap: 1.25rem;
@@ -94,6 +107,24 @@ code {
 
 .language-switcher .btn {
   min-width: 4.5rem;
+}
+
+.device-metrics {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.device-sensor-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 576px) {
+  .device-sensor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .heatmap-placeholder {
@@ -178,4 +209,53 @@ code {
   display: block;
   font-size: 1.1rem;
   font-weight: 600;
+}
+
+.cop-board {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: 1px solid #e9ecef;
+  border-radius: 0.75rem;
+  background-image: linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+  background-size: calc(100% / 8) calc(100% / 8);
+  background-color: #fdfdfd;
+}
+
+.cop-board-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.5rem;
+  color: #6c757d;
+  font-size: 0.9rem;
+}
+
+.cop-board.has-data .cop-board-placeholder {
+  display: none;
+}
+
+.cop-dot {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: #0d6efd;
+  border: 2px solid #fff;
+  box-shadow: 0 0 6px rgba(13, 110, 253, 0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: none;
+}
+
+.cop-board.has-data .cop-dot {
+  display: block;
+}
+
+.cop-values .fw-semibold {
+  font-size: 1.1rem;
 }

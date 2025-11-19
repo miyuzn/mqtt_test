@@ -38,7 +38,7 @@
       <!-- Heatmap + detail cards region -->
       <!-- 热力图与详情卡片区域 -->
       <div class="row g-4">
-        <div class="col-lg-8">
+        <div class="col-12">
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <div class="d-flex flex-column flex-xl-row align-items-xl-center justify-content-between gap-3 mb-3">
@@ -61,6 +61,7 @@
                         type="number"
                         class="form-control"
                         id="pressure-min"
+                        value="300"
                         placeholder="下限"
                         data-i18n-placeholder="inputs.placeholder.lower"
                         step="any"
@@ -75,6 +76,7 @@
                         type="number"
                         class="form-control"
                         id="pressure-max"
+                        value="1000"
                         placeholder="上限"
                         data-i18n-placeholder="inputs.placeholder.upper"
                         step="any"
@@ -120,6 +122,43 @@
                   <div class="heatmap-wrapper" id="heatmap-container-primary">
                     <div class="heatmap-placeholder" data-i18n="heatmap.empty.waiting">等待数据...</div>
                   </div>
+                  <div class="device-metrics">
+                    <div class="device-sensor-grid">
+                      <div class="overview-sensor-block">
+                        <div class="fw-semibold" data-i18n="overview.gyro">陀螺仪 (°/s)</div>
+                        <div class="sensor-vector">
+                          <div class="axis-value"><span>X</span><strong id="gyro-primary-x">--</strong></div>
+                          <div class="axis-value"><span>Y</span><strong id="gyro-primary-y">--</strong></div>
+                          <div class="axis-value"><span>Z</span><strong id="gyro-primary-z">--</strong></div>
+                        </div>
+                      </div>
+                      <div class="overview-sensor-block">
+                        <div class="fw-semibold" data-i18n="overview.acc">加速度 (m/s²)</div>
+                        <div class="sensor-vector">
+                          <div class="axis-value"><span>X</span><strong id="acc-primary-x">--</strong></div>
+                          <div class="axis-value"><span>Y</span><strong id="acc-primary-y">--</strong></div>
+                          <div class="axis-value"><span>Z</span><strong id="acc-primary-z">--</strong></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="overview-sensor-block mt-3">
+                      <div class="fw-semibold" data-i18n="overview.cop">压力中心 (COP)</div>
+                      <div class="cop-board" id="cop-board-primary">
+                        <div class="cop-board-placeholder" id="cop-placeholder-primary" data-i18n="overview.cop_empty">等待设备数据...</div>
+                        <div class="cop-dot" id="cop-dot-primary"></div>
+                      </div>
+                      <div class="row text-center cop-values mt-3">
+                        <div class="col">
+                          <div class="text-muted small" data-i18n="overview.cop_x">X 坐标</div>
+                          <div class="fw-semibold" id="cop-x-primary">--</div>
+                        </div>
+                        <div class="col">
+                          <div class="text-muted small" data-i18n="overview.cop_y">Y 坐标</div>
+                          <div class="fw-semibold" id="cop-y-primary">--</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </section>
                 <section class="heatmap-panel d-none" aria-labelledby="panel-secondary-label" id="panel-secondary">
                   <div class="heatmap-panel-header">
@@ -152,64 +191,44 @@
                   <div class="heatmap-wrapper" id="heatmap-container-secondary">
                     <div class="heatmap-placeholder" data-i18n="heatmap.empty.no_device">选择设备以查看压力热力图</div>
                   </div>
+                  <div class="device-metrics">
+                    <div class="device-sensor-grid">
+                      <div class="overview-sensor-block">
+                        <div class="fw-semibold" data-i18n="overview.gyro">陀螺仪 (°/s)</div>
+                        <div class="sensor-vector">
+                          <div class="axis-value"><span>X</span><strong id="gyro-secondary-x">--</strong></div>
+                          <div class="axis-value"><span>Y</span><strong id="gyro-secondary-y">--</strong></div>
+                          <div class="axis-value"><span>Z</span><strong id="gyro-secondary-z">--</strong></div>
+                        </div>
+                      </div>
+                      <div class="overview-sensor-block">
+                        <div class="fw-semibold" data-i18n="overview.acc">加速度 (m/s²)</div>
+                        <div class="sensor-vector">
+                          <div class="axis-value"><span>X</span><strong id="acc-secondary-x">--</strong></div>
+                          <div class="axis-value"><span>Y</span><strong id="acc-secondary-y">--</strong></div>
+                          <div class="axis-value"><span>Z</span><strong id="acc-secondary-z">--</strong></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="overview-sensor-block mt-3">
+                      <div class="fw-semibold" data-i18n="overview.cop">压力中心 (COP)</div>
+                      <div class="cop-board" id="cop-board-secondary">
+                        <div class="cop-board-placeholder" id="cop-placeholder-secondary" data-i18n="overview.cop_empty">等待设备数据...</div>
+                        <div class="cop-dot" id="cop-dot-secondary"></div>
+                      </div>
+                      <div class="row text-center cop-values mt-3">
+                        <div class="col">
+                          <div class="text-muted small" data-i18n="overview.cop_x">X 坐标</div>
+                          <div class="fw-semibold" id="cop-x-secondary">--</div>
+                        </div>
+                        <div class="col">
+                          <div class="text-muted small" data-i18n="overview.cop_y">Y 坐标</div>
+                          <div class="fw-semibold" id="cop-y-secondary">--</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </section>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-lg-4">
-          <div class="card shadow-sm h-100">
-            <div class="card-body">
-              <h2 class="h5 mb-3" data-i18n="overview.title">当前概览</h2>
-              <div class="overview-metric-grid">
-                <div>
-                  <div class="fw-semibold" data-i18n="overview.active_devices">活跃设备</div>
-                  <div class="display-6" id="active-devices">0</div>
-                </div>
-                <div class="overview-sensors">
-                  <div class="overview-sensor-block">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                      <div class="fw-semibold" data-i18n="overview.gyro">陀螺仪 (°/s)</div>
-                    </div>
-                    <div class="sensor-vector" id="gyro-summary">
-                      <div class="axis-value">
-                        <span>X</span>
-                        <strong id="gyro-x">--</strong>
-                      </div>
-                      <div class="axis-value">
-                        <span>Y</span>
-                        <strong id="gyro-y">--</strong>
-                      </div>
-                      <div class="axis-value">
-                        <span>Z</span>
-                        <strong id="gyro-z">--</strong>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="overview-sensor-block">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                      <div class="fw-semibold" data-i18n="overview.acc">加速度 (m/s²)</div>
-                    </div>
-                    <div class="sensor-vector" id="acc-summary">
-                      <div class="axis-value">
-                        <span>X</span>
-                        <strong id="acc-x">--</strong>
-                      </div>
-                      <div class="axis-value">
-                        <span>Y</span>
-                        <strong id="acc-y">--</strong>
-                      </div>
-                      <div class="axis-value">
-                        <span>Z</span>
-                        <strong id="acc-z">--</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div class="text-muted small" id="sensor-source">
-                  <span data-i18n="overview.source_label">数据来源：</span>
-                  <span id="sensor-source-dn">--</span>
-                </div>
               </div>
             </div>
           </div>
@@ -257,6 +276,21 @@
         heatmapContainer: document.getElementById(`heatmap-container-${key}`),
         mirrorRowsToggle: document.getElementById(`mirror-rows-${key}`),
         mirrorColsToggle: document.getElementById(`mirror-cols-${key}`),
+        gyroElements: {
+          x: document.getElementById(`gyro-${key}-x`),
+          y: document.getElementById(`gyro-${key}-y`),
+          z: document.getElementById(`gyro-${key}-z`)
+        },
+        accElements: {
+          x: document.getElementById(`acc-${key}-x`),
+          y: document.getElementById(`acc-${key}-y`),
+          z: document.getElementById(`acc-${key}-z`)
+        },
+        copBoard: document.getElementById(`cop-board-${key}`),
+        copDot: document.getElementById(`cop-dot-${key}`),
+        copPlaceholder: document.getElementById(`cop-placeholder-${key}`),
+        copXValue: document.getElementById(`cop-x-${key}`),
+        copYValue: document.getElementById(`cop-y-${key}`),
         selectedDevice: null,
         selectedLayoutKey: null,
         mirrorRows: false,
@@ -274,20 +308,12 @@
       const statusIndicator = document.getElementById("status-indicator");
       const activeDevicesLabel = document.getElementById("active-devices");
       const lastUpdateLabel = document.getElementById("last-update");
-      const gyroElements = {
-        x: document.getElementById("gyro-x"),
-        y: document.getElementById("gyro-y"),
-        z: document.getElementById("gyro-z")
-      };
-      const accElements = {
-        x: document.getElementById("acc-x"),
-        y: document.getElementById("acc-y"),
-        z: document.getElementById("acc-z")
-      };
-      const sensorSourceLabel = document.getElementById("sensor-source-dn");
       const languageButtons = document.querySelectorAll("#language-switcher [data-lang]");
-      let customRangeMin = null;
-      let customRangeMax = null;
+      const panelRenderCache = new Map();
+      const DEFAULT_RANGE_MIN = 300;
+      const DEFAULT_RANGE_MAX = 1000;
+      let customRangeMin = DEFAULT_RANGE_MIN;
+      let customRangeMax = DEFAULT_RANGE_MAX;
       const REFRESH_INTERVAL_MS = 250;
       const SNAPSHOT_POLL_INTERVAL_MS = 30000;
       const STREAM_RECONNECT_BASE_DELAY_MS = 2000;
@@ -373,8 +399,9 @@
         applyDualModeState();
         updateDeviceOptions();
         panelContexts.forEach((panel) => updateLayoutOptionsForPanel(panel));
+        panelContexts.forEach(updatePanelSensors);
         updateAllHeatmaps();
-        updateOverviewSensors();
+        panelContexts.forEach(updatePanelCop);
       }
 
       const COLOR_GREEN = [46, 204, 113];
@@ -427,6 +454,10 @@
           "overview.total_pressure": "总压力",
           "overview.gyro": "陀螺仪 (°/s)",
           "overview.acc": "加速度 (m/s²)",
+          "overview.cop": "压力中心 (COP)",
+          "overview.cop_x": "X 坐标",
+          "overview.cop_y": "Y 坐标",
+          "overview.cop_empty": "等待设备数据...",
           "overview.source_label": "数据来源：",
           "table.title": "设备详情",
           "table.headers.dn": "DN",
@@ -477,6 +508,10 @@
           "overview.total_pressure": "総圧力",
           "overview.gyro": "ジャイロ (°/s)",
           "overview.acc": "加速度 (m/s²)",
+          "overview.cop": "圧力中心 (COP)",
+          "overview.cop_x": "X 座標",
+          "overview.cop_y": "Y 座標",
+          "overview.cop_empty": "デバイスのデータを待機中...",
           "overview.source_label": "データ元：",
           "table.title": "デバイス詳細",
           "table.headers.dn": "DN",
@@ -527,6 +562,10 @@
           "overview.total_pressure": "Total pressure",
           "overview.gyro": "Gyroscope (°/s)",
           "overview.acc": "Acceleration (m/s²)",
+          "overview.cop": "Center of Pressure (COP)",
+          "overview.cop_x": "X coordinate",
+          "overview.cop_y": "Y coordinate",
+          "overview.cop_empty": "Waiting for device data...",
           "overview.source_label": "Data source:",
           "table.title": "Device Details",
           "table.headers.dn": "DN",
@@ -652,8 +691,9 @@
             panel.deviceOptionsCache.selected = panel.selectedDevice;
             syncPanelMirrorControls(panel);
             updateLayoutOptionsForPanel(panel);
-            updateOverviewSensors();
+            updatePanelSensors(panel);
             updateAllHeatmaps();
+            updatePanelCop(panel);
           });
         }
         if (panel.layoutSelector) {
@@ -661,6 +701,7 @@
             panel.selectedLayoutKey = event.target.value || null;
             panel.layoutOptionsCache.selectedKey = panel.selectedLayoutKey;
             updateAllHeatmaps();
+            updatePanelCop(panel);
           });
         }
         if (panel.mirrorRowsToggle) {
@@ -679,26 +720,33 @@
         }
       });
 
+      if (pressureMinInput) {
+        pressureMinInput.value = String(DEFAULT_RANGE_MIN);
+      }
+      if (pressureMaxInput) {
+        pressureMaxInput.value = String(DEFAULT_RANGE_MAX);
+      }
       if (pressureMinInput && pressureMaxInput) {
         ["input", "change"].forEach((eventName) => {
           pressureMinInput.addEventListener(eventName, handleCustomRangeChange);
           pressureMaxInput.addEventListener(eventName, handleCustomRangeChange);
         });
+        handleCustomRangeChange();
       }
 
       if (resetRangeButton) {
         resetRangeButton.addEventListener("click", () => {
           if (pressureMinInput) {
-            pressureMinInput.value = "";
+            pressureMinInput.value = String(DEFAULT_RANGE_MIN);
             pressureMinInput.classList.remove("is-invalid");
           }
           if (pressureMaxInput) {
-            pressureMaxInput.value = "";
+            pressureMaxInput.value = String(DEFAULT_RANGE_MAX);
             pressureMaxInput.classList.remove("is-invalid");
           }
-          customRangeMin = null;
-          customRangeMax = null;
-          updateAllHeatmaps();
+          customRangeMin = DEFAULT_RANGE_MIN;
+          customRangeMax = DEFAULT_RANGE_MAX;
+          handleCustomRangeChange();
         });
       }
 
@@ -1086,8 +1134,10 @@
         updateRangePlaceholders(dataMin, dataMax);
         const range = resolveEffectiveRange(dataMin, dataMax);
         panelData.forEach(({ panel, ctx }) => {
+          panelRenderCache.set(panel.key, ctx);
           renderPanelHeatmap(panel, ctx, range);
         });
+        panelContexts.forEach(updatePanelCop);
       }
 
       function chooseDefaultDeviceForPanel(panel, devices) {
@@ -1123,6 +1173,8 @@
           }
           panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
           setPanelPlaceholder(panel, "heatmap.empty.dual_disabled");
+          updatePanelSensors(panel);
+          updatePanelCop(panel);
           return;
         }
         const entry = panel.selectedDevice ? state.get(panel.selectedDevice) : null;
@@ -1138,7 +1190,14 @@
           panel.layoutSelector.value = "";
           panel.selectedLayoutKey = null;
           panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
-          setPanelPlaceholder(panel, panel.selectedDevice ? "heatmap.empty.waiting" : "heatmap.empty.no_device");
+          setPanelPlaceholder(
+            panel,
+            panelIsActive(panel)
+              ? (panel.selectedDevice ? "heatmap.empty.waiting" : "heatmap.empty.no_device")
+              : "heatmap.empty.dual_disabled"
+          );
+          updatePanelSensors(panel);
+          updatePanelCop(panel);
           return;
         }
         const sensorCount = Number.isInteger(entry.sensorCount)
@@ -1153,6 +1212,8 @@
           panel.selectedLayoutKey = null;
           panel.layoutOptionsCache = { dn: entry.dn, sensorCount, options: [], selectedKey: null, lang: currentLanguage };
           setPanelPlaceholder(panel, "heatmap.empty.no_layout");
+          updatePanelSensors(panel);
+          updatePanelCop(panel);
           return;
         }
         const optionKeys = pairs.map(([rows, cols]) => `${rows}x${cols}`);
@@ -1194,6 +1255,8 @@
           selectedKey: panel.selectedLayoutKey,
           lang: currentLanguage
         };
+        updatePanelSensors(panel);
+        updatePanelCop(panel);
       }
 
       function updateDeviceOptions() {
@@ -1227,6 +1290,8 @@
             panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
             syncPanelMirrorControls(panel);
             setPanelPlaceholder(panel, isActive ? "heatmap.empty.waiting" : "heatmap.empty.dual_disabled");
+            updatePanelSensors(panel);
+            updatePanelCop(panel);
             changed = true;
             return;
           }
@@ -1254,6 +1319,8 @@
           if (listChanged || languageChanged || selectionChanged) {
             changed = true;
           }
+          updatePanelSensors(panel);
+          updatePanelCop(panel);
         });
         return changed;
       }
@@ -1293,23 +1360,127 @@
         return scaled.toFixed(decimals);
       }
 
-      function updateOverviewSensors() {
-        const entry = primaryPanel?.selectedDevice ? state.get(primaryPanel.selectedDevice) : null;
+      function updatePanelSensors(panel) {
+        if (!panel) {
+          return;
+        }
+        const active = panelIsActive(panel);
+        const entry = active && panel.selectedDevice ? state.get(panel.selectedDevice) : null;
         const gyro = entry && Array.isArray(entry.gyro) ? entry.gyro : null;
-        const acc = entry && Array.isArray(entry.acc) ? entry.acc : null;
         ["x", "y", "z"].forEach((axis, idx) => {
-          if (gyroElements[axis]) {
-            const value = gyro && Number.isFinite(gyro[idx]) ? gyro[idx] : null;
-            gyroElements[axis].textContent = value !== null ? formatAxisReading(value) : "--";
-          }
-          if (accElements[axis]) {
-            const accValue = acc && Number.isFinite(acc[idx]) ? acc[idx] : null;
-            accElements[axis].textContent =
-              accValue !== null ? formatAxisReading(accValue, { scale: 9.8 }) : "--";
+          const el = panel.gyroElements?.[axis];
+          if (el) {
+            el.textContent =
+              gyro && Number.isFinite(gyro[idx]) ? formatAxisReading(gyro[idx]) : "--";
           }
         });
-        if (sensorSourceLabel) {
-          sensorSourceLabel.textContent = entry && entry.dn ? entry.dn : "--";
+        const acc = entry && Array.isArray(entry.acc) ? entry.acc : null;
+        ["x", "y", "z"].forEach((axis, idx) => {
+          const el = panel.accElements?.[axis];
+          if (el) {
+            el.textContent =
+              acc && Number.isFinite(acc[idx])
+                ? formatAxisReading(acc[idx], { scale: 9.8 })
+                : "--";
+          }
+        });
+      }
+
+      function updatePanelCop(panel) {
+        if (!panel || !panel.copBoard) {
+          return;
+        }
+        const board = panel.copBoard;
+        const dot = panel.copDot;
+        const xValue = panel.copXValue;
+        const yValue = panel.copYValue;
+        const active = panelIsActive(panel);
+        const ctx = panelRenderCache.get(panel.key);
+        if (!active) {
+          board.classList.remove("has-data");
+          if (dot) {
+            dot.style.left = "50%";
+            dot.style.top = "50%";
+          }
+          if (xValue) {
+            xValue.textContent = "--";
+          }
+          if (yValue) {
+            yValue.textContent = "--";
+          }
+          if (panel.copPlaceholder) {
+            panel.copPlaceholder.textContent = t("heatmap.empty.dual_disabled");
+          }
+          return;
+        }
+        if (!ctx || ctx.state !== "ready" || !Array.isArray(ctx.displayValues)) {
+          board.classList.remove("has-data");
+          if (dot) {
+            dot.style.left = "50%";
+            dot.style.top = "50%";
+          }
+          if (xValue) xValue.textContent = "--";
+          if (yValue) yValue.textContent = "--";
+          if (panel.copPlaceholder) {
+            panel.copPlaceholder.textContent = t("overview.cop_empty");
+          }
+          return;
+        }
+        const { rows, cols, displayValues } = ctx;
+        let total = 0;
+        let sumX = 0;
+        let sumY = 0;
+        const OFFSET = 250;
+        displayValues.forEach((value, idx) => {
+          if (Number.isFinite(value)) {
+            const adjusted = value - OFFSET;
+            if (adjusted <= 0) {
+              return;
+            }
+            const row = Math.floor(idx / cols);
+            const col = idx % cols;
+            total += adjusted;
+            sumX += adjusted * col;
+            sumY += adjusted * row;
+          }
+        });
+        if (!Number.isFinite(total) || total <= 0) {
+          board.classList.remove("has-data");
+          if (xValue) xValue.textContent = "--";
+          if (yValue) yValue.textContent = "--";
+          if (panel.copPlaceholder) {
+            panel.copPlaceholder.textContent = t("overview.cop_empty");
+          }
+          return;
+        }
+        const copX = sumX / total;
+        const copY = sumY / total;
+        if (xValue) {
+          xValue.textContent = copX.toFixed(2);
+        }
+        if (yValue) {
+          yValue.textContent = copY.toFixed(2);
+        }
+        const colMax = Math.max(cols - 1, 1);
+        const rowMax = Math.max(rows - 1, 1);
+        const centerX = (cols - 1) / 2;
+        const centerY = (rows - 1) / 2;
+        const halfRangeX = colMax / 2;
+        const halfRangeY = rowMax / 2;
+        const leftBound = centerX - halfRangeX;
+        const rightBound = centerX + halfRangeX;
+        const topBound = centerY - halfRangeY;
+        const bottomBound = centerY + halfRangeY;
+        let xRatio =
+          rightBound - leftBound === 0 ? 0.5 : (copX - leftBound) / (rightBound - leftBound);
+        let yRatio =
+          bottomBound - topBound === 0 ? 0.5 : (copY - topBound) / (bottomBound - topBound);
+        xRatio = Math.min(1, Math.max(0, xRatio));
+        yRatio = Math.min(1, Math.max(0, yRatio));
+        board.classList.add("has-data");
+        if (dot) {
+          dot.style.left = `${xRatio * 100}%`;
+          dot.style.top = `${yRatio * 100}%`;
         }
       }
 
@@ -1336,8 +1507,8 @@
             updateLayoutOptionsForPanel(panel);
           }
         });
+        panelContexts.forEach(updatePanelSensors);
         updateAllHeatmaps();
-        updateOverviewSensors();
         updateLastUpdateIndicator();
       }
 
@@ -1427,6 +1598,9 @@
             }
             syncPanelMirrorControls(panel);
             setPanelPlaceholder(panel, panelIsActive(panel) ? "heatmap.empty.no_device" : "heatmap.empty.dual_disabled");
+            panelRenderCache.delete(panel.key);
+            updatePanelSensors(panel);
+            updatePanelCop(panel);
           }
         });
         // Trigger full UI refresh so dropdown + table update / 触发整体刷新以更新下拉与表格
