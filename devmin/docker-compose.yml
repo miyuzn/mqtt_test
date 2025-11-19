@@ -25,6 +25,7 @@ services:
       BROKER_PORT: 1883
       MQTT_BROKER_HOST: localhost
       MQTT_SUB_TOPIC: etx/v1/raw/#
+      SINK_FLUSH_EVERY_ROWS: 1
       SINK_ROOT_DIR: /workspace/data/mqtt_store
     volumes:
       - ../app:/workspace/app

@@ -103,6 +103,8 @@ def load_config() -> dict:
     cfg["MQTT_SUB_TOPIC"]   = env("MQTT_SUB_TOPIC", cfg["MQTT_SUB_TOPIC"])
     cfg["CLIENT_ID"]        = env("CLIENT_ID", cfg["CLIENT_ID"])
     cfg["ROOT_DIR"]         = env("SINK_ROOT_DIR", cfg["ROOT_DIR"])
+    cfg["FLUSH_EVERY_ROWS"] = int(env("SINK_FLUSH_EVERY_ROWS", str(cfg["FLUSH_EVERY_ROWS"])))
+    cfg["INACT_TIMEOUT_SEC"] = int(env("SINK_INACT_TIMEOUT_SEC", str(cfg["INACT_TIMEOUT_SEC"])))
     return cfg
 
 # ========== DN & CSV 句柄 ==========

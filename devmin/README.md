@@ -88,6 +88,7 @@ devmin/
 
 - **端口/绑定地址**：修改 `devmin/.env` 后重新 `docker compose up -d`，即可更换 MQTT/Web 端口。宿主机 `data_receive.py` 需同步指向新端口。
 - **数据持久化**：所有 CSV 均输出在 `devmin/data/mqtt_store/<DN>/<YYYYMMDD>/data.csv`。
+- **实时写盘**：`parser` 服务通过环境变量设置 `SINK_FLUSH_EVERY_ROWS=1`，确保每条记录写入后立刻刷新；若要改为批量刷新，可在 Compose 中调整该值。
 - **日志排查**：`docker compose -f devmin/docker-compose.yml logs -f parser` / `logs -f web`；采集端日志直接在本地终端查看。
 
 ## 限制与兼容性
