@@ -65,12 +65,13 @@ docker compose -f docker-compose.transfer.yml up -d
 - 不需要额外 IP 配置，Transfer Server 的公网/内网地址由宿主机决定，供其它服务器引用。
 
 ### Data Processing Server（PyClient 落盘 + Web）
-1. 复制示例环境文件并填写 **Transfer Server 的 IP 或域名**：
+1. 复制示例环境文件并填写 **Transfer / Processing 两台服务器的地址**：
    ```bash
    cp .env.processing.example .env.processing
    ```
-   - `TRANSFER_MQTT_HOST`：Transfer Server 上 mosquitto 暴露的地址；
-   - `BRIDGE_API_BASE_URL`：Transfer Server 上 bridge HTTP 服务地址。
+   - 顶部 **Transfer / Processing Server Addresses** 区块记录两台机器：`TRANSFER_SERVER_HOST`（运行 `docker-compose.transfer.yml` 的服务器）以及 `PROCESSING_SERVER_HOST`（运行 `docker-compose.processing.yml` 的服务器，通常供浏览器访问 5000/5002 端口）；后续若服务器更换，只需修改这一段；
+   - `TRANSFER_MQTT_HOST` / `CONFIG_BROKER_HOST`：Processing Server 访问 Transfer Server 上 mosquitto 的地址与端口，保持与 `TRANSFER_SERVER_HOST` 一致即可；
+   - `BRIDGE_API_BASE_URL`：Processing Server 访问 Transfer Server 上桥接服务（5001 HTTP）的地址。
 2. 运行：
    ```bash
    docker compose --env-file .env.processing -f docker-compose.processing.yml up -d
