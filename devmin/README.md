@@ -1,84 +1,98 @@
-# devmin：开发者最小栈
+# devmin：开发者最小栈（parser + web，两容器）
 
-面向 Windows Docker Desktop（Linux Engine）为主、macOS Docker Desktop 为辅的研发场景，将原系统拆成 **采集**、**解析落盘**、**Web/控制台** 三个容器。所有容器内部均只访问 `localhost`，通过 `socat` 转发到解析容器，避免暴露任何互联网 IP。
+针对以 **Windows Docker Desktop（Linux Engine）** 为主、**macOS Docker Desktop** 为辅的研发环境，`devmin` 目录提供仅包含 “解析+落盘” 与 “Web/控制台” 两个容器的 Compose。**数据采集仍由宿主机运行的 `data_receive.py` 负责**，以避免容器内无法正确侦听外部 UDP 数据的问题。
 
-> ⚠️ Docker Desktop 的 `network_mode: host` 在 Windows/macOS 上不可用，因此无法直接在不同容器内通过 `localhost` 互访。本方案使用端口转发进程封装这一差异，对 `data_receive.py` 等代码保持零改动。
+> ⚠️ Windows/macOS 上的 `network_mode: host` 不可用，因此容器内部依旧通过 `socat` 把 `localhost` 转发到解析容器；宿主机运行的 `data_receive.py` 直接连接 `127.0.0.1:1883`。
 
-## 目录
+## 目录结构
 
 ```
 devmin/
- ├─ collector.Dockerfile      # data_receive.py + localhost→parser 转发
  ├─ parser_store.Dockerfile   # mosquitto + raw_parser_service + sink
  ├─ webstack.Dockerfile       # bridge + webapp(app.py/config console)
- ├─ docker-compose.yml        # 最小三容器编排
- ├─ .env.example              # 可选端口/绑定配置
- ├─ config/
- │   └─ collector.config.ini  # 采集端专用 config.ini，默认 broker=localhost
- ├─ scripts/                  # 各容器入口脚本（处理多进程与清理）
+ ├─ docker-compose.yml        # 仅 parser + web 两个服务
+ ├─ .env.example              # 可选端口映射配置
+ ├─ scripts/                  # 多进程入口脚本
  ├─ requirements/             # Web/Bridge 组合依赖
- └─ data/                     # 默认挂载目录（MQTT 落盘/MQTT 数据/采集日志）
+ └─ data/                     # 默认挂载目录（mqtt_store、mosquitto 数据）
 ```
 
 ## 服务拆分
 
-| 服务 | 进程 | 说明 |
-| ---- | ---- | ---- |
-| `parser` | `mosquitto`、`server/raw_parser_service.py`、`app/sink.py` | MQTT broker（1883/9001）+ 原始帧解析 + CSV 落盘，一切进程只连 `localhost` |
-| `collector` | `data_receive.py` + `socat` | UDP→MQTT 采集，不修改源码；容器内 `localhost:1883` 被 `socat` 转发到 `parser` |
-| `web` | `server/bridge.py`、`webapp/app.py` + `socat` | 提供 5000（仪表盘）、5002（控制台）、5001（Bridge API）；桥接 MQTT 同样通过转发保持 `localhost` 地址 |
-
-数据收集的起止即为 `collector` 容器的启动/停止：只要 `collector` 运行就表示正在接收 UDP 并写入 MQTT Broker；`docker compose stop collector` 立刻终止收数。
+| 单元 | 运行位置 | 进程/内容 | 说明 |
+| ---- | ---- | ---- | ---- |
+| parser | 容器 | `mosquitto`、`server/raw_parser_service.py`、`app/sink.py` | MQTT broker（1883/9001）、原始→JSON 解析、CSV 落盘。所有进程只访问容器内 `localhost`。 |
+| web | 容器 | `server/bridge.py`、`webapp/app.py` + `socat` | 提供 5001（Bridge API）、5000（仪表盘）、5002（配置控制台）；MQTT 访问通过 `socat` 保持 `localhost`。 |
+| collector | 宿主机 | `data_receive.py` | 直接在开发者主机运行，监听 UDP 并将数据写入 `parser` 暴露的 1883 端口。 |
 
 ## 快速使用
 
-1. 可选：复制并调整 `.env`：
+1. **可选：配置端口**  
    ```powershell
    cd C:\Users\CNLab\mqtt_test
    copy devmin\.env.example devmin\.env
-   # 根据需要修改端口（默认全部绑定到 127.0.0.1）
+   # 根据需要调整 DEVMIN_MQTT_PORT / DEVMIN_WEB_PORT / DEVMIN_CONSOLE_PORT / DEVMIN_BRIDGE_PORT
    ```
-2. 启动最小栈（第 1 次会自动构建三类镜像）：
+
+2. **启动解析+Web 栈（首次会自动构建镜像）**  
    ```powershell
    docker compose -f devmin/docker-compose.yml up -d --build
    ```
-3. 浏览器访问：
+
+3. **在宿主机启动 `data_receive.py`（采集起点）**  
+   - 准备虚拟环境并安装依赖：
+     ```powershell
+     python -m venv .venv
+     .\.venv\Scripts\activate
+     pip install -r app/requirements.txt
+     ```
+   - 确认 `config.ini` 中 `[MQTT] BROKER_HOST` 改为 `127.0.0.1`（或设置环境变量 `MQTT_BROKER_HOST=127.0.0.1`）。
+   - 运行：
+     ```powershell
+     python data_receive.py
+     ```
+   - 当需要结束采集时，`Ctrl+C` 即为采集终点。
+
+4. **访问页面**
    - 仪表盘：http://localhost:${DEVMIN_WEB_PORT:-5000}
    - 下发控制台：http://localhost:${DEVMIN_CONSOLE_PORT:-5002}
-4. 停止全部服务：
+
+5. **停止容器栈**
    ```powershell
    docker compose -f devmin/docker-compose.yml down
    ```
-5. 只暂停或恢复采集：
-   ```powershell
-   docker compose -f devmin/docker-compose.yml stop collector    # 终止收数
-   docker compose -f devmin/docker-compose.yml start collector   # 重新开始
-   ```
-
-> 💡 Windows/macOS Docker Desktop 默认只监听 127.0.0.1，可通过 `.env` 中 `DEVMIN_UDP_BIND=0.0.0.0` 允许同一局域网的设备将 UDP 帧发送到开发者机器。
 
 ## 映射目录
 
-| 容器 | 挂载路径 | 主机路径 | 用途 |
+| 服务 | 容器路径 | 主机路径 | 描述 |
 | ---- | ---- | ---- | ---- |
-| parser | `/workspace/app, /workspace/server` | `../app`,`../server` | 热更新 Python 源码 |
+| parser | `/workspace/app`, `/workspace/server` | `../app`, `../server` | 共享源码，支持热更新 |
 | parser | `/workspace/data/mqtt_store` | `devmin/data/mqtt_store` | `sink.py` 输出 CSV |
 | parser | `/mosquitto` | `devmin/data/mosquitto` | Broker 数据/日志 |
-| collector | `/workspace/app`、`/workspace/data_receive.py` | `../app`, `../data_receive.py` | 复用现有采集逻辑 |
-| collector | `/workspace/output` | `devmin/data/collector` | 可选日志/缓存 |
-| web | `/workspace/server`、`/workspace/webapp`、`/workspace/app` | 同名目录 | 浏览器 UI 与桥 |
+| web | `/workspace/server`, `/workspace/webapp`, `/workspace/app` | 对应源码目录 | Web/Bridge 热更新 |
+
+## 宿主机采集端注意事项
+
+1. **MQTT 目标**：`data_receive.py` 的 `BROKER_HOST` 应配置为 `127.0.0.1`，端口与 `DEVMIN_MQTT_PORT` 一致（默认为 1883）。文件配置优先：  
+   ```ini
+   [MQTT]
+   BROKER_HOST = 127.0.0.1
+   BROKER_PORT = 1883
+   ```
+   或在启动前 `setx MQTT_BROKER_HOST 127.0.0.1`。
+2. **UDP 监听**：采集端仍在宿主机执行，可继续监听 0.0.0.0:13250 等端口，不再受到容器网络限制。
+3. **打点时间段**：`python data_receive.py` 启动时即视为采集开始，按 `Ctrl+C` 结束（脚本会捕获信号并做清理）。
 
 ## 常见定制
 
-- **端口 / 绑定地址**：在 `devmin/.env` 中调整 `DEVMIN_*` 变量后，重新运行 `docker compose up -d`.
-- **UDP 监听**：默认只监听本机。若需要局域网终端发送数据，将 `DEVMIN_UDP_BIND=0.0.0.0` 并确保系统防火墙允许 13250/UDP。
-- **停止后落盘数据**：CSV 位于 `devmin/data/mqtt_store/<DN>/<YYYYMMDD>/data.csv`，可直接使用宿主机工具分析。
-- **日志定位**：`docker compose -f devmin/docker-compose.yml logs -f parser|collector|web`.
+- **端口/绑定地址**：修改 `devmin/.env` 后重新 `docker compose up -d`，即可更换 MQTT/Web 端口。宿主机 `data_receive.py` 需同步指向新端口。
+- **数据持久化**：所有 CSV 均输出在 `devmin/data/mqtt_store/<DN>/<YYYYMMDD>/data.csv`。
+- **日志排查**：`docker compose -f devmin/docker-compose.yml logs -f parser` / `logs -f web`；采集端日志直接在本地终端查看。
 
 ## 限制与兼容性
 
-1. Windows/macOS 缺少 `host` 网络模式，所以 `collector`、`web` 容器里通过 `socat` 把 `localhost` 代理到 `parser`。如在原生 Linux 上部署，可将 `BROKER_FORWARD_ENABLED=0` 并改用 `network_mode: host`。
-2. 端口全部绑定在 127.0.0.1，上线前需显式更改绑定地址或借助反向代理。
-3. 镜像基于 `python:3.11-slim`，默认拉取 x86_64 Linux 层。如需 ARM64（Apple Silicon），Docker 会自动拉取对应多架构层。
+1. Windows/macOS 无法使用 `network_mode: host`，`web` 容器仍通过 `socat` 访问 `parser`。在原生 Linux 上可以把 `BROKER_FORWARD_ENABLED` 设为 0 并自行开启 host 网络。
+2. 所有端口仅绑定 `127.0.0.1`，若需局域网访问，需自行在 Docker Desktop 侧暴露或通过反向代理。
+3. 镜像基于 `python:3.11-slim`，支持 x86_64/arm64 多架构。
 
-如需进一步扩展（例如启用 TLS、拆分 parser/store），可在本目录新增 Compose profile、或继续沿用根目录的完整 `docker-compose.yml`。
+如需进一步扩展（TLS、分布式部署等），可继续沿用根目录 `docker-compose.yml` 或在 `devmin` 中新增 profile。

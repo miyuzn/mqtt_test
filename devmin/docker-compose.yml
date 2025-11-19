@@ -29,33 +29,11 @@ services:
       - ../app:/workspace/app
       - ../server:/workspace/server
       - ../config.ini:/workspace/config.ini:ro
-      - ./config:/workspace/devmin/config:ro
       - ./data/mqtt_store:/workspace/data/mqtt_store
       - ./data/mosquitto:/mosquitto
     ports:
       - "127.0.0.1:${DEVMIN_MQTT_PORT:-1883}:1883"
       - "127.0.0.1:${DEVMIN_MQTT_WS_PORT:-9001}:9001"
-
-  collector:
-    build:
-      context: ..
-      dockerfile: devmin/collector.Dockerfile
-    container_name: devmin-collector
-    depends_on:
-      - parser
-    environment:
-      CONFIG_PATH: /workspace/devmin/config/collector.config.ini
-      BROKER_FORWARD_HOST: parser
-      BROKER_FORWARD_PORT: 1883
-      BROKER_LOCAL_PORT: 1883
-      BROKER_FORWARD_ENABLED: 1
-    volumes:
-      - ../app:/workspace/app
-      - ../data_receive.py:/workspace/data_receive.py:ro
-      - ./config:/workspace/devmin/config:ro
-      - ./data/collector:/workspace/output
-    ports:
-      - "${DEVMIN_UDP_BIND:-127.0.0.1}:${DEVMIN_UDP_PORT:-13250}:13250/udp"
 
   web:
     build:
