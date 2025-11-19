@@ -43,83 +43,116 @@
             <div class="card-body">
               <div class="d-flex flex-column flex-xl-row align-items-xl-center justify-content-between gap-3 mb-3">
                 <h2 class="h5 mb-0" data-i18n="heatmap.heading">压力热力图</h2>
-                <div class="w-100">
-                  <div class="row gy-2 gx-2 align-items-stretch heatmap-controls">
-                    <div class="col-12 col-md-6 col-xl-auto">
-                      <div class="input-group">
-                        <span class="input-group-text" data-i18n="controls.device">设备</span>
-                        <select class="form-select" id="device-selector" disabled>
-                          <option value="">等待数据...</option>
-                        </select>
-                      </div>
+                <div class="form-check form-switch dual-mode-switch mb-0">
+                  <input class="form-check-input" type="checkbox" id="dual-mode-toggle" />
+                  <label class="form-check-label" for="dual-mode-toggle" data-i18n="controls.dual_mode">双设备模式</label>
+                </div>
+              </div>
+              <div class="pressure-range-card mb-3">
+                <div class="row gy-2 gx-2 align-items-center">
+                  <div class="col-12">
+                    <div class="fw-semibold text-secondary" data-i18n="controls.range">压力范围</div>
+                  </div>
+                  <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+                    <label class="visually-hidden" for="pressure-min" data-i18n="inputs.lower_label">压力下限</label>
+                    <div class="input-group">
+                      <span class="input-group-text" data-i18n="inputs.lower_label">下限</span>
+                      <input
+                        type="number"
+                        class="form-control"
+                        id="pressure-min"
+                        placeholder="下限"
+                        data-i18n-placeholder="inputs.placeholder.lower"
+                        step="any"
+                      />
                     </div>
-                    <div class="col-12 col-md-6 col-xl-auto">
-                      <div class="input-group">
-                        <span class="input-group-text" data-i18n="controls.layout">布局</span>
-                        <select class="form-select" id="layout-selector" disabled>
-                          <option value="">--</option>
-                        </select>
-                      </div>
+                  </div>
+                  <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+                    <label class="visually-hidden" for="pressure-max" data-i18n="inputs.upper_label">压力上限</label>
+                    <div class="input-group">
+                      <span class="input-group-text" data-i18n="inputs.upper_label">上限</span>
+                      <input
+                        type="number"
+                        class="form-control"
+                        id="pressure-max"
+                        placeholder="上限"
+                        data-i18n-placeholder="inputs.placeholder.upper"
+                        step="any"
+                      />
                     </div>
-                    <div class="col-12 col-md-6 col-xl-auto">
-                      <div class="mirror-toggle-group d-flex flex-wrap align-items-center gap-3">
-                        <div class="form-check form-switch mb-0">
-                          <input class="form-check-input" type="checkbox" id="mirror-rows" />
-                          <label class="form-check-label" for="mirror-rows" data-i18n="controls.mirror_rows">行镜像</label>
-                        </div>
-                        <div class="form-check form-switch mb-0">
-                          <input class="form-check-input" type="checkbox" id="mirror-cols" />
-                          <label class="form-check-label" for="mirror-cols" data-i18n="controls.mirror_cols">列镜像</label>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="col-12">
-                      <div class="pressure-range-group">
-                        <div class="row gy-2 gx-2 align-items-center">
-                          <div class="col-12">
-                            <div class="fw-semibold text-secondary" data-i18n="controls.range">压力范围</div>
-                          </div>
-                          <div class="col-12 col-sm-6 col-md-4 col-xl-3">
-                            <label class="visually-hidden" for="pressure-min" data-i18n="inputs.lower_label">压力下限</label>
-                            <div class="input-group">
-                              <span class="input-group-text" data-i18n="inputs.lower_label">下限</span>
-                              <input
-                                type="number"
-                                class="form-control"
-                                id="pressure-min"
-                                placeholder="下限"
-                                data-i18n-placeholder="inputs.placeholder.lower"
-                                step="any"
-                              />
-                            </div>
-                          </div>
-                          <div class="col-12 col-sm-6 col-md-4 col-xl-3">
-                            <label class="visually-hidden" for="pressure-max" data-i18n="inputs.upper_label">压力上限</label>
-                            <div class="input-group">
-                              <span class="input-group-text" data-i18n="inputs.upper_label">上限</span>
-                              <input
-                                type="number"
-                                class="form-control"
-                                id="pressure-max"
-                                placeholder="上限"
-                                data-i18n-placeholder="inputs.placeholder.upper"
-                                step="any"
-                              />
-                            </div>
-                          </div>
-                          <div class="col-12 col-sm-auto">
-                            <button class="btn btn-outline-secondary w-100 w-sm-auto" type="button" id="reset-range" data-i18n="actions.reset">
-                              重置
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                  </div>
+                  <div class="col-12 col-sm-auto">
+                    <button class="btn btn-outline-secondary w-100 w-sm-auto" type="button" id="reset-range" data-i18n="actions.reset">
+                      重置
+                    </button>
                   </div>
                 </div>
               </div>
-              <div id="heatmap-container">
-                <div class="heatmap-placeholder" data-i18n="heatmap.empty.waiting">等待数据...</div>
+              <div class="dual-heatmap-grid">
+                <section class="heatmap-panel" aria-labelledby="panel-primary-label" id="panel-primary">
+                  <div class="heatmap-panel-header">
+                    <h3 class="h6 mb-0" id="panel-primary-label" data-i18n="controls.primary_panel">设备 A</h3>
+                  </div>
+                  <div class="heatmap-panel-controls">
+                    <div class="input-group mb-2">
+                      <span class="input-group-text" data-i18n="controls.device_primary">设备 A</span>
+                      <select class="form-select" id="device-selector-primary" disabled>
+                        <option value="" data-i18n="controls.waiting">等待数据...</option>
+                      </select>
+                    </div>
+                    <div class="input-group mb-2">
+                      <span class="input-group-text" data-i18n="controls.layout">布局</span>
+                      <select class="form-select" id="layout-selector-primary" disabled>
+                        <option value="">--</option>
+                      </select>
+                    </div>
+                    <div class="mirror-toggle-group d-flex flex-wrap align-items-center gap-3">
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="mirror-rows-primary" />
+                        <label class="form-check-label" for="mirror-rows-primary" data-i18n="controls.mirror_rows">行镜像</label>
+                      </div>
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="mirror-cols-primary" />
+                        <label class="form-check-label" for="mirror-cols-primary" data-i18n="controls.mirror_cols">列镜像</label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="heatmap-wrapper" id="heatmap-container-primary">
+                    <div class="heatmap-placeholder" data-i18n="heatmap.empty.waiting">等待数据...</div>
+                  </div>
+                </section>
+                <section class="heatmap-panel d-none" aria-labelledby="panel-secondary-label" id="panel-secondary">
+                  <div class="heatmap-panel-header">
+                    <h3 class="h6 mb-0" id="panel-secondary-label" data-i18n="controls.secondary_panel">设备 B</h3>
+                  </div>
+                  <div class="heatmap-panel-controls">
+                    <div class="input-group mb-2">
+                      <span class="input-group-text" data-i18n="controls.device_secondary">设备 B</span>
+                      <select class="form-select" id="device-selector-secondary" disabled>
+                        <option value="" data-i18n="controls.waiting">等待数据...</option>
+                      </select>
+                    </div>
+                    <div class="input-group mb-2">
+                      <span class="input-group-text" data-i18n="controls.layout">布局</span>
+                      <select class="form-select" id="layout-selector-secondary" disabled>
+                        <option value="">--</option>
+                      </select>
+                    </div>
+                    <div class="mirror-toggle-group d-flex flex-wrap align-items-center gap-3">
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="mirror-rows-secondary" />
+                        <label class="form-check-label" for="mirror-rows-secondary" data-i18n="controls.mirror_rows">行镜像</label>
+                      </div>
+                      <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="mirror-cols-secondary" />
+                        <label class="form-check-label" for="mirror-cols-secondary" data-i18n="controls.mirror_cols">列镜像</label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="heatmap-wrapper" id="heatmap-container-secondary">
+                    <div class="heatmap-placeholder" data-i18n="heatmap.empty.no_device">选择设备以查看压力热力图</div>
+                  </div>
+                </section>
               </div>
             </div>
           </div>
@@ -128,9 +161,55 @@
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <h2 class="h5 mb-3" data-i18n="overview.title">当前概览</h2>
-              <div class="mb-3">
-                <div class="fw-semibold" data-i18n="overview.active_devices">活跃设备</div>
-                <div class="display-6" id="active-devices">0</div>
+              <div class="overview-metric-grid">
+                <div>
+                  <div class="fw-semibold" data-i18n="overview.active_devices">活跃设备</div>
+                  <div class="display-6" id="active-devices">0</div>
+                </div>
+                <div class="overview-sensors">
+                  <div class="overview-sensor-block">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <div class="fw-semibold" data-i18n="overview.gyro">陀螺仪 (°/s)</div>
+                    </div>
+                    <div class="sensor-vector" id="gyro-summary">
+                      <div class="axis-value">
+                        <span>X</span>
+                        <strong id="gyro-x">--</strong>
+                      </div>
+                      <div class="axis-value">
+                        <span>Y</span>
+                        <strong id="gyro-y">--</strong>
+                      </div>
+                      <div class="axis-value">
+                        <span>Z</span>
+                        <strong id="gyro-z">--</strong>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="overview-sensor-block">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                      <div class="fw-semibold" data-i18n="overview.acc">加速度 (m/s²)</div>
+                    </div>
+                    <div class="sensor-vector" id="acc-summary">
+                      <div class="axis-value">
+                        <span>X</span>
+                        <strong id="acc-x">--</strong>
+                      </div>
+                      <div class="axis-value">
+                        <span>Y</span>
+                        <strong id="acc-y">--</strong>
+                      </div>
+                      <div class="axis-value">
+                        <span>Z</span>
+                        <strong id="acc-z">--</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="text-muted small" id="sensor-source">
+                  <span data-i18n="overview.source_label">数据来源：</span>
+                  <span id="sensor-source-dn">--</span>
+                </div>
               </div>
             </div>
           </div>
@@ -170,24 +249,45 @@
       const state = new Map();
       const mirrorSettingsByDevice = new Map();
       const STALE_THRESHOLD_MS = 30 * 1000;
-      const deviceSelector = document.getElementById("device-selector");
-      const layoutSelector = document.getElementById("layout-selector");
-      const heatmapContainer = document.getElementById("heatmap-container");
+      const panelContexts = ["primary", "secondary"].map((key) => ({
+        key,
+        panelElement: document.getElementById(`panel-${key}`),
+        deviceSelector: document.getElementById(`device-selector-${key}`),
+        layoutSelector: document.getElementById(`layout-selector-${key}`),
+        heatmapContainer: document.getElementById(`heatmap-container-${key}`),
+        mirrorRowsToggle: document.getElementById(`mirror-rows-${key}`),
+        mirrorColsToggle: document.getElementById(`mirror-cols-${key}`),
+        selectedDevice: null,
+        selectedLayoutKey: null,
+        mirrorRows: false,
+        mirrorCols: false,
+        deviceOptionsCache: { devices: [], selected: null, lang: null },
+        layoutOptionsCache: { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null }
+      }));
+      const primaryPanel = panelContexts[0];
+      const secondaryPanel = panelContexts[1];
+      const dualModeToggle = document.getElementById("dual-mode-toggle");
+      let dualModeEnabled = localStorage.getItem("dualModeEnabled") === "1";
       const pressureMinInput = document.getElementById("pressure-min");
       const pressureMaxInput = document.getElementById("pressure-max");
       const resetRangeButton = document.getElementById("reset-range");
-      const mirrorRowsToggle = document.getElementById("mirror-rows");
-      const mirrorColsToggle = document.getElementById("mirror-cols");
       const statusIndicator = document.getElementById("status-indicator");
       const activeDevicesLabel = document.getElementById("active-devices");
       const lastUpdateLabel = document.getElementById("last-update");
+      const gyroElements = {
+        x: document.getElementById("gyro-x"),
+        y: document.getElementById("gyro-y"),
+        z: document.getElementById("gyro-z")
+      };
+      const accElements = {
+        x: document.getElementById("acc-x"),
+        y: document.getElementById("acc-y"),
+        z: document.getElementById("acc-z")
+      };
+      const sensorSourceLabel = document.getElementById("sensor-source-dn");
       const languageButtons = document.querySelectorAll("#language-switcher [data-lang]");
-      let selectedDevice = null;
-      let selectedLayoutKey = null;
       let customRangeMin = null;
       let customRangeMax = null;
-      let mirrorRows = false;
-      let mirrorCols = false;
       const REFRESH_INTERVAL_MS = 250;
       const SNAPSHOT_POLL_INTERVAL_MS = 30000;
       const STREAM_RECONNECT_BASE_DELAY_MS = 2000;
@@ -199,8 +299,6 @@
       let currentEventSource = null;
       let streamReconnectTimerId = null;
       let streamReconnectAttempts = 0;
-      let deviceOptionsCache = { devices: [], selected: null, lang: null };
-      let layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null };
 
       // --- Stream lifecycle helpers: manage SSE backoff/retry flow ---
       // --- 流式连接辅助：管理 SSE 回退与重连流程 ---
@@ -256,6 +354,29 @@
         return true;
       }
 
+      function panelIsActive(panel) {
+        return panel.key !== "secondary" || dualModeEnabled;
+      }
+
+      function applyDualModeState() {
+        if (dualModeToggle) {
+          dualModeToggle.checked = dualModeEnabled;
+        }
+        if (secondaryPanel.panelElement) {
+          secondaryPanel.panelElement.classList.toggle("d-none", !dualModeEnabled);
+        }
+      }
+
+      function setDualMode(enabled) {
+        dualModeEnabled = enabled;
+        localStorage.setItem("dualModeEnabled", enabled ? "1" : "0");
+        applyDualModeState();
+        updateDeviceOptions();
+        panelContexts.forEach((panel) => updateLayoutOptionsForPanel(panel));
+        updateAllHeatmaps();
+        updateOverviewSensors();
+      }
+
       const COLOR_GREEN = [46, 204, 113];
       const COLOR_YELLOW = [241, 196, 15];
       const COLOR_ORANGE = [243, 156, 18];
@@ -286,6 +407,11 @@
           "status.stream_ok": "实时连接已建立",
           "heatmap.heading": "压力热力图",
           "controls.device": "设备",
+          "controls.primary_panel": "设备 A",
+          "controls.secondary_panel": "设备 B",
+          "controls.device_primary": "设备 A",
+          "controls.device_secondary": "设备 B",
+          "controls.dual_mode": "双设备模式",
           "controls.layout": "布局",
           "controls.mirror_rows": "行镜像",
           "controls.mirror_cols": "列镜像",
@@ -299,6 +425,9 @@
           "overview.title": "当前概览",
           "overview.active_devices": "活跃设备",
           "overview.total_pressure": "总压力",
+          "overview.gyro": "陀螺仪 (°/s)",
+          "overview.acc": "加速度 (m/s²)",
+          "overview.source_label": "数据来源：",
           "table.title": "设备详情",
           "table.headers.dn": "DN",
           "table.headers.count": "压力传感器数",
@@ -310,6 +439,7 @@
           "heatmap.empty.no_device": "选择设备以查看压力热力图",
           "heatmap.empty.no_layout": "请选择布局组合",
           "heatmap.empty.waiting": "等待设备数据更新...",
+          "heatmap.empty.dual_disabled": "开启双设备模式以查看第二设备",
           "heatmap.tooltip.value": "压力值：",
           "heatmap.tooltip.missing": "缺少压力数据",
           "console.snapshot_fetch_failed": "无法获取数据",
@@ -327,6 +457,11 @@
           "status.stream_ok": "リアルタイム接続が確立されました",
           "heatmap.heading": "圧力ヒートマップ",
           "controls.device": "デバイス",
+          "controls.primary_panel": "デバイスA",
+          "controls.secondary_panel": "デバイスB",
+          "controls.device_primary": "デバイスA",
+          "controls.device_secondary": "デバイスB",
+          "controls.dual_mode": "デュアル表示",
           "controls.layout": "レイアウト",
           "controls.mirror_rows": "行を反転",
           "controls.mirror_cols": "列を反転",
@@ -340,6 +475,9 @@
           "overview.title": "概要",
           "overview.active_devices": "アクティブデバイス",
           "overview.total_pressure": "総圧力",
+          "overview.gyro": "ジャイロ (°/s)",
+          "overview.acc": "加速度 (m/s²)",
+          "overview.source_label": "データ元：",
           "table.title": "デバイス詳細",
           "table.headers.dn": "DN",
           "table.headers.count": "センサー数",
@@ -351,6 +489,7 @@
           "heatmap.empty.no_device": "デバイスを選択してヒートマップを表示",
           "heatmap.empty.no_layout": "レイアウトを選択してください",
           "heatmap.empty.waiting": "デバイスデータの更新を待機中...",
+          "heatmap.empty.dual_disabled": "デュアル表示を有効にすると表示されます",
           "heatmap.tooltip.value": "圧力値：",
           "heatmap.tooltip.missing": "圧力データなし",
           "console.snapshot_fetch_failed": "データを取得できませんでした",
@@ -368,6 +507,11 @@
           "status.stream_ok": "Realtime feed active",
           "heatmap.heading": "Pressure Heatmap",
           "controls.device": "Device",
+          "controls.primary_panel": "Device A",
+          "controls.secondary_panel": "Device B",
+          "controls.device_primary": "Device A",
+          "controls.device_secondary": "Device B",
+          "controls.dual_mode": "Dual mode",
           "controls.layout": "Layout",
           "controls.mirror_rows": "Mirror rows",
           "controls.mirror_cols": "Mirror columns",
@@ -381,6 +525,9 @@
           "overview.title": "Overview",
           "overview.active_devices": "Active devices",
           "overview.total_pressure": "Total pressure",
+          "overview.gyro": "Gyroscope (°/s)",
+          "overview.acc": "Acceleration (m/s²)",
+          "overview.source_label": "Data source:",
           "table.title": "Device Details",
           "table.headers.dn": "DN",
           "table.headers.count": "Sensor count",
@@ -392,6 +539,7 @@
           "heatmap.empty.no_device": "Select a device to view the heatmap",
           "heatmap.empty.no_layout": "Choose a layout",
           "heatmap.empty.waiting": "Waiting for device data...",
+          "heatmap.empty.dual_disabled": "Enable dual mode to visualize the second device",
           "heatmap.tooltip.value": "Pressure: ",
           "heatmap.tooltip.missing": "No pressure data",
           "console.snapshot_fetch_failed": "Failed to fetch data",
@@ -489,32 +637,47 @@
         });
       });
 
-      deviceSelector.addEventListener("change", (event) => {
-        selectedDevice = event.target.value || null;
-        deviceOptionsCache.selected = selectedDevice;
-        updateLayoutOptions();
-      });
-
-      layoutSelector.addEventListener("change", (event) => {
-        selectedLayoutKey = event.target.value || null;
-        updateHeatmap();
-      });
-
-      if (mirrorRowsToggle) {
-        mirrorRowsToggle.addEventListener("change", (event) => {
-          mirrorRows = Boolean(event.target.checked);
-          persistMirrorSettings();
-          updateHeatmap();
+      if (dualModeToggle) {
+        dualModeToggle.checked = dualModeEnabled;
+        dualModeToggle.addEventListener("change", (event) => {
+          setDualMode(Boolean(event.target.checked));
         });
       }
+      applyDualModeState();
 
-      if (mirrorColsToggle) {
-        mirrorColsToggle.addEventListener("change", (event) => {
-          mirrorCols = Boolean(event.target.checked);
-          persistMirrorSettings();
-          updateHeatmap();
-        });
-      }
+      panelContexts.forEach((panel) => {
+        if (panel.deviceSelector) {
+          panel.deviceSelector.addEventListener("change", (event) => {
+            panel.selectedDevice = event.target.value || null;
+            panel.deviceOptionsCache.selected = panel.selectedDevice;
+            syncPanelMirrorControls(panel);
+            updateLayoutOptionsForPanel(panel);
+            updateOverviewSensors();
+            updateAllHeatmaps();
+          });
+        }
+        if (panel.layoutSelector) {
+          panel.layoutSelector.addEventListener("change", (event) => {
+            panel.selectedLayoutKey = event.target.value || null;
+            panel.layoutOptionsCache.selectedKey = panel.selectedLayoutKey;
+            updateAllHeatmaps();
+          });
+        }
+        if (panel.mirrorRowsToggle) {
+          panel.mirrorRowsToggle.addEventListener("change", (event) => {
+            panel.mirrorRows = Boolean(event.target.checked);
+            persistMirrorSettings(panel);
+            updateAllHeatmaps();
+          });
+        }
+        if (panel.mirrorColsToggle) {
+          panel.mirrorColsToggle.addEventListener("change", (event) => {
+            panel.mirrorCols = Boolean(event.target.checked);
+            persistMirrorSettings(panel);
+            updateAllHeatmaps();
+          });
+        }
+      });
 
       if (pressureMinInput && pressureMaxInput) {
         ["input", "change"].forEach((eventName) => {
@@ -535,7 +698,7 @@
           }
           customRangeMin = null;
           customRangeMax = null;
-          updateHeatmap();
+          updateAllHeatmaps();
         });
       }
 
@@ -621,7 +784,7 @@
           }
           customRangeMin = null;
           customRangeMax = null;
-          updateHeatmap();
+          updateAllHeatmaps();
           return;
         }
 
@@ -635,7 +798,7 @@
             pressureMaxInput.classList.add("is-invalid");
             customRangeMin = null;
             customRangeMax = null;
-            updateHeatmap();
+            updateAllHeatmaps();
             return;
           }
         } else {
@@ -644,7 +807,7 @@
           customRangeMax = null;
         }
 
-        updateHeatmap();
+        updateAllHeatmaps();
       }
 
       function updateRangePlaceholders(dataMin, dataMax) {
@@ -758,7 +921,9 @@
         return Math.trunc(value);
       }
 
-      function applyMirroring(values, rows, cols) {
+      function applyMirroring(values, rows, cols, options = {}) {
+        const mirrorRowsFlag = Boolean(options.mirrorRows);
+        const mirrorColsFlag = Boolean(options.mirrorCols);
         // Without full dimensions simply clone the provided values / 没有完整行列信息时直接克隆原始数组
         if (!rows || !cols) {
           return values.slice();
@@ -766,10 +931,10 @@
         const result = [];
         for (let displayRow = 0; displayRow < rows; displayRow += 1) {
           // Flip row index when mirrorRows is enabled / 启用行镜像时翻转行索引
-          const sourceRow = mirrorRows ? rows - 1 - displayRow : displayRow;
+          const sourceRow = mirrorRowsFlag ? rows - 1 - displayRow : displayRow;
           const start = sourceRow * cols;
           const rowValues = values.slice(start, start + cols);
-          if (mirrorCols) {
+          if (mirrorColsFlag) {
             // Reverse cell order horizontally when requested / 需要列镜像时水平翻转
             rowValues.reverse();
           }
@@ -778,291 +943,319 @@
         return result;
       }
 
-      function persistMirrorSettings() {
-        // No device selected means nothing to persist / 若未选设备则无需保存
-        if (!selectedDevice) {
+      function persistMirrorSettings(panel) {
+        if (!panel || !panel.selectedDevice) {
           return;
         }
-        // Store per-device mirror preferences for later restoration / 按设备记录镜像偏好以便恢复
-        mirrorSettingsByDevice.set(selectedDevice, {
-          rows: mirrorRows,
-          cols: mirrorCols
+        mirrorSettingsByDevice.set(panel.selectedDevice, {
+          rows: panel.mirrorRows,
+          cols: panel.mirrorCols
         });
       }
 
-      function syncMirrorControlsFromState() {
-        // Missing toggles implies mirror modes are disabled / 无开关控件则视为禁用镜像
-        if (!mirrorRowsToggle || !mirrorColsToggle) {
-          mirrorRows = false;
-          mirrorCols = false;
+      function syncPanelMirrorControls(panel) {
+        if (!panel) {
           return;
         }
-        // Pull previously saved mirror options for the active device / 读取当前设备之前保存的镜像设置
-        const settings = selectedDevice ? mirrorSettingsByDevice.get(selectedDevice) : null;
-        mirrorRows = settings ? Boolean(settings.rows) : false;
-        mirrorCols = settings ? Boolean(settings.cols) : false;
-        // Sync switch UI state with internal flags / 将内部状态同步回界面开关
-        mirrorRowsToggle.checked = mirrorRows;
-        mirrorColsToggle.checked = mirrorCols;
+        const settings = panel.selectedDevice ? mirrorSettingsByDevice.get(panel.selectedDevice) : null;
+        panel.mirrorRows = settings ? Boolean(settings.rows) : false;
+        panel.mirrorCols = settings ? Boolean(settings.cols) : false;
+        if (panel.mirrorRowsToggle) {
+          panel.mirrorRowsToggle.checked = panel.mirrorRows;
+          panel.mirrorRowsToggle.disabled = !panel.selectedDevice || !panelIsActive(panel);
+        }
+        if (panel.mirrorColsToggle) {
+          panel.mirrorColsToggle.checked = panel.mirrorCols;
+          panel.mirrorColsToggle.disabled = !panel.selectedDevice || !panelIsActive(panel);
+        }
       }
 
-      function setHeatmapPlaceholder(key) {
-        // Centralize placeholder markup for different empty states / 统一管理不同空状态的提示文案
-        heatmapContainer.innerHTML = `<div class="heatmap-placeholder">${t(key)}</div>`;
-      }
-
-      // Render the heatmap SVG + controls based on latest device selection.
-      // 根据当前设备选择渲染热力图 SVG 及控制项。
-      function updateHeatmap() {
-        // Start from blank slate before rendering / 渲染前先清空容器
-        heatmapContainer.innerHTML = "";
-        if (!selectedDevice) {
-          // No device chosen – show helper text / 未选择设备时展示提示
-          setHeatmapPlaceholder("heatmap.empty.no_device");
+      function setPanelPlaceholder(panel, key) {
+        if (!panel || !panel.heatmapContainer) {
           return;
         }
-        const entry = state.get(selectedDevice);
+        panel.heatmapContainer.innerHTML = `<div class="heatmap-placeholder">${t(key)}</div>`;
+      }
+
+      function buildPanelRenderContext(panel) {
+        if (!panelIsActive(panel)) {
+          return { state: "inactive" };
+        }
+        if (!panel || !panel.heatmapContainer) {
+          return { state: "missing" };
+        }
+        if (!panel.selectedDevice) {
+          return { state: "no_device" };
+        }
+        const entry = state.get(panel.selectedDevice);
         if (!entry) {
-          // Device selected but no data cached yet / 已选设备但尚无数据
-          setHeatmapPlaceholder("heatmap.empty.waiting");
-          return;
+          return { state: "waiting" };
         }
-        const layout = parseLayoutKey(selectedLayoutKey);
+        const layout = parseLayoutKey(panel.selectedLayoutKey);
         if (!layout) {
-          // Layout missing means no grid to draw / 没有布局信息无法绘制网格
-          setHeatmapPlaceholder("heatmap.empty.no_layout");
-          return;
+          return { state: "no_layout" };
         }
         const [rows, cols] = layout;
         const totalCells = rows * cols;
-        // Copy pressure values so mutations don't leak to state / 拷贝压力值避免修改共享状态
-        const values = Array.isArray(entry.pressureValues) ? [...entry.pressureValues] : [];
-        if (values.length > totalCells) {
-          // Trim overflow values to match grid size / 若超出网格则截断
-          values.length = totalCells;
+        const values = Array.isArray(entry.pressureValues) ? entry.pressureValues.slice(0, totalCells) : [];
+        while (values.length < totalCells) {
+          values.push(NaN);
         }
-        const paddedValues = values.slice();
-        while (paddedValues.length < totalCells) {
-          // Pad with NaN so grid is rectangular / 使用 NaN 补齐以获得完整矩阵
-          paddedValues.push(NaN);
-        }
-        // Apply row/column mirroring before rendering / 在渲染前套用行列镜像
-        const displayValues = applyMirroring(paddedValues, rows, cols);
-        const validValues = paddedValues.filter((value) => Number.isFinite(value));
+        const displayValues = applyMirroring(values, rows, cols, {
+          mirrorRows: panel.mirrorRows,
+          mirrorCols: panel.mirrorCols
+        });
+        const validValues = values.filter((value) => Number.isFinite(value));
         const hasValidValues = validValues.length > 0;
         const dataMin = hasValidValues ? Math.min(...validValues) : null;
         const dataMax = hasValidValues ? Math.max(...validValues) : null;
-        updateRangePlaceholders(dataMin, dataMax);
-        // Resolve final coloring boundaries (custom overrides win) / 计算最终的着色边界（优先自定义范围）
-        const { min: resolvedMin, max: resolvedMax } = resolveEffectiveRange(dataMin, dataMax);
-        const min = Number.isFinite(resolvedMin) ? resolvedMin : 0;
-        const max = Number.isFinite(resolvedMax) ? resolvedMax : min;
+        return {
+          state: "ready",
+          rows,
+          cols,
+          displayValues,
+          dataMin,
+          dataMax
+        };
+      }
 
+      function renderPanelHeatmap(panel, ctx, range) {
+        if (!panel || !panel.heatmapContainer) {
+          return;
+        }
+        const container = panel.heatmapContainer;
+        container.innerHTML = "";
+        if (!ctx || ctx.state === "missing") {
+          container.innerHTML = "";
+          return;
+        }
+        if (ctx.state === "inactive") {
+          setPanelPlaceholder(panel, "heatmap.empty.dual_disabled");
+          return;
+        }
+        if (ctx.state !== "ready") {
+          const placeholderKey =
+            ctx.state === "no_device"
+              ? "heatmap.empty.no_device"
+              : ctx.state === "no_layout"
+                ? "heatmap.empty.no_layout"
+                : "heatmap.empty.waiting";
+          setPanelPlaceholder(panel, placeholderKey);
+          return;
+        }
         const grid = document.createElement("div");
         grid.className = "heatmap-grid";
-        grid.style.setProperty("--rows", rows);
-        grid.style.setProperty("--cols", cols);
-
-        displayValues.forEach((value) => {
+        grid.style.setProperty("--rows", ctx.rows);
+        grid.style.setProperty("--cols", ctx.cols);
+        const min = Number.isFinite(range.min) ? range.min : 0;
+        const max = Number.isFinite(range.max) ? range.max : min;
+        ctx.displayValues.forEach((value) => {
           const cell = document.createElement("div");
           cell.className = "heatmap-cell";
           if (Number.isFinite(value)) {
-            // For valid numeric cells, show value + color coding / 对有效数值显示读数并着色
             const displayValue = formatPressureValue(value);
             cell.textContent = displayValue;
             cell.style.backgroundColor = valueToColor(value, min, max);
             cell.style.color = valueToTextColor(value, min, max);
             cell.title = `${t("heatmap.tooltip.value")}${displayValue}`;
           } else {
-            // Missing data uses placeholder and tooltip / 缺失数据使用占位符与提示
             cell.classList.add("is-empty");
             cell.textContent = "--";
             cell.title = t("heatmap.tooltip.missing");
           }
           grid.appendChild(cell);
         });
-
-        heatmapContainer.appendChild(grid);
+        container.appendChild(grid);
       }
 
-      function updateLayoutOptions() {
-        // Layout selector absent (e.g., stripped-down UI) / 缺少布局选择器（精简界面）
-        if (!layoutSelector) {
+      function updateAllHeatmaps() {
+        const panelData = panelContexts.map((panel) => {
+          if (!panelIsActive(panel)) {
+            return { panel, ctx: { state: "inactive" } };
+          }
+          return { panel, ctx: buildPanelRenderContext(panel) };
+        });
+        const mins = panelData
+          .filter(({ ctx }) => ctx && ctx.state === "ready" && Number.isFinite(ctx.dataMin))
+          .map(({ ctx }) => ctx.dataMin);
+        const maxs = panelData
+          .filter(({ ctx }) => ctx && ctx.state === "ready" && Number.isFinite(ctx.dataMax))
+          .map(({ ctx }) => ctx.dataMax);
+        const dataMin = mins.length ? Math.min(...mins) : null;
+        const dataMax = maxs.length ? Math.max(...maxs) : null;
+        updateRangePlaceholders(dataMin, dataMax);
+        const range = resolveEffectiveRange(dataMin, dataMax);
+        panelData.forEach(({ panel, ctx }) => {
+          renderPanelHeatmap(panel, ctx, range);
+        });
+      }
+
+      function chooseDefaultDeviceForPanel(panel, devices) {
+        if (panel.selectedDevice && devices.includes(panel.selectedDevice)) {
+          return panel.selectedDevice;
+        }
+        if (panel.key === "secondary") {
+          const primaryDn = primaryPanel?.selectedDevice || null;
+          const alternate = devices.find((dn) => dn !== primaryDn);
+          if (alternate) {
+            return alternate;
+          }
+        }
+        return devices[0] || null;
+      }
+
+      function updateLayoutOptionsForPanel(panel) {
+        if (!panel || !panel.layoutSelector) {
           return;
         }
-        const entry = selectedDevice ? state.get(selectedDevice) : null;
-        if (mirrorRowsToggle) {
-          mirrorRowsToggle.disabled = true;
-        }
-        if (mirrorColsToggle) {
-          mirrorColsToggle.disabled = true;
-        }
-        // Always resync mirror toggles because device context may change / 设备上下文可能改变，需重新同步镜像状态
-        syncMirrorControlsFromState();
-        const sensorCount =
-          entry && Number.isInteger(entry.sensorCount) && entry.sensorCount > 0
-            ? entry.sensorCount
-            : null;
-        const languageChanged = layoutOptionsCache.lang !== currentLanguage;
-        const hasValidEntry = Boolean(entry) && sensorCount !== null;
-
-        if (!hasValidEntry) {
-          // Entry missing – collapse selector to placeholder option / 缺少条目时将选择器收敛为占位项
-          if (
-            layoutOptionsCache.dn !== null ||
-            layoutOptionsCache.sensorCount !== null ||
-            languageChanged
-          ) {
-            layoutSelector.innerHTML = "";
-            const option = document.createElement("option");
-            option.value = "";
-            option.textContent = "--";
-            layoutSelector.appendChild(option);
+        if (!panelIsActive(panel)) {
+          panel.layoutSelector.innerHTML = "";
+          panel.layoutSelector.disabled = true;
+          panel.layoutSelector.value = "";
+          panel.selectedLayoutKey = null;
+          if (panel.mirrorRowsToggle) {
+            panel.mirrorRowsToggle.disabled = true;
+            panel.mirrorRowsToggle.checked = false;
           }
-          layoutSelector.disabled = true;
-          layoutSelector.value = "";
-          selectedLayoutKey = null;
-          mirrorRows = false;
-          mirrorCols = false;
-          if (mirrorRowsToggle) {
-            mirrorRowsToggle.disabled = true;
-            mirrorRowsToggle.checked = false;
+          if (panel.mirrorColsToggle) {
+            panel.mirrorColsToggle.disabled = true;
+            panel.mirrorColsToggle.checked = false;
           }
-          if (mirrorColsToggle) {
-            mirrorColsToggle.disabled = true;
-            mirrorColsToggle.checked = false;
-          }
-          layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
-          setHeatmapPlaceholder("heatmap.empty.no_device");
+          panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
+          setPanelPlaceholder(panel, "heatmap.empty.dual_disabled");
           return;
         }
-
+        const entry = panel.selectedDevice ? state.get(panel.selectedDevice) : null;
+        if (panel.mirrorRowsToggle) {
+          panel.mirrorRowsToggle.disabled = true;
+        }
+        if (panel.mirrorColsToggle) {
+          panel.mirrorColsToggle.disabled = true;
+        }
+        if (!entry) {
+          panel.layoutSelector.innerHTML = "";
+          panel.layoutSelector.disabled = true;
+          panel.layoutSelector.value = "";
+          panel.selectedLayoutKey = null;
+          panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
+          setPanelPlaceholder(panel, panel.selectedDevice ? "heatmap.empty.waiting" : "heatmap.empty.no_device");
+          return;
+        }
+        const sensorCount = Number.isInteger(entry.sensorCount)
+          ? entry.sensorCount
+          : Array.isArray(entry.pressureValues)
+            ? entry.pressureValues.length
+            : 0;
         const pairs = computeFactorPairs(sensorCount);
-        const optionKeys = pairs.map(([rows, cols]) => `${rows}x${cols}`);
-        if (!optionKeys.length) {
-          // Sensor count could not be factored; disable selection / 无法根据传感器数量推导布局时禁用控件
-          layoutSelector.innerHTML = "";
-          const option = document.createElement("option");
-          option.value = "";
-          option.textContent = "--";
-          layoutSelector.appendChild(option);
-          layoutSelector.disabled = true;
-          selectedLayoutKey = null;
-          layoutOptionsCache = { dn: entry.dn, sensorCount, options: [], selectedKey: null, lang: currentLanguage };
-          if (mirrorRowsToggle) {
-            mirrorRowsToggle.disabled = true;
-            mirrorRowsToggle.checked = false;
-          }
-          if (mirrorColsToggle) {
-            mirrorColsToggle.disabled = true;
-            mirrorColsToggle.checked = false;
-          }
-          setHeatmapPlaceholder("heatmap.empty.no_layout");
+        if (!pairs.length) {
+          panel.layoutSelector.innerHTML = "";
+          panel.layoutSelector.disabled = true;
+          panel.selectedLayoutKey = null;
+          panel.layoutOptionsCache = { dn: entry.dn, sensorCount, options: [], selectedKey: null, lang: currentLanguage };
+          setPanelPlaceholder(panel, "heatmap.empty.no_layout");
           return;
         }
-
+        const optionKeys = pairs.map(([rows, cols]) => `${rows}x${cols}`);
+        const languageChanged = panel.layoutOptionsCache.lang !== currentLanguage;
         const optionsChanged =
-          layoutOptionsCache.dn !== entry.dn ||
-          layoutOptionsCache.sensorCount !== sensorCount ||
-          !arraysEqual(optionKeys, layoutOptionsCache.options) ||
+          panel.layoutOptionsCache.dn !== entry.dn ||
+          panel.layoutOptionsCache.sensorCount !== sensorCount ||
+          !arraysEqual(optionKeys, panel.layoutOptionsCache.options) ||
           languageChanged;
-
         if (optionsChanged) {
-          // Rebuild dropdown options whenever list changes / 当可选列表改变时重建下拉项
-          layoutSelector.innerHTML = "";
+          panel.layoutSelector.innerHTML = "";
           pairs.forEach(([rows, cols]) => {
             const key = `${rows}x${cols}`;
             const option = document.createElement("option");
             option.value = key;
             option.textContent = `${rows} × ${cols}`;
-            layoutSelector.appendChild(option);
+            panel.layoutSelector.appendChild(option);
           });
         }
-
-        if (!selectedLayoutKey || !optionKeys.includes(selectedLayoutKey)) {
-          // Keep previous selection when possible, else fall back to default / 若可能保留先前选择，否则回退默认值
-          selectedLayoutKey =
-            layoutOptionsCache.selectedKey && optionKeys.includes(layoutOptionsCache.selectedKey)
-              ? layoutOptionsCache.selectedKey
+        if (!panel.selectedLayoutKey || !optionKeys.includes(panel.selectedLayoutKey)) {
+          panel.selectedLayoutKey =
+            panel.layoutOptionsCache.selectedKey && optionKeys.includes(panel.layoutOptionsCache.selectedKey)
+              ? panel.layoutOptionsCache.selectedKey
               : chooseDefaultLayout(pairs);
         }
-
-        layoutSelector.value = selectedLayoutKey;
-        layoutSelector.disabled = false;
-
-        if (mirrorRowsToggle) {
-          // Re-enable toggles once layout is valid / 布局有效后重新启用镜像开关
-          mirrorRowsToggle.disabled = false;
+        panel.layoutSelector.value = panel.selectedLayoutKey || "";
+        panel.layoutSelector.disabled = false;
+        if (panel.mirrorRowsToggle) {
+          panel.mirrorRowsToggle.disabled = false;
         }
-        if (mirrorColsToggle) {
-          mirrorColsToggle.disabled = false;
+        if (panel.mirrorColsToggle) {
+          panel.mirrorColsToggle.disabled = false;
         }
-        syncMirrorControlsFromState();
-
-        layoutOptionsCache = {
+        syncPanelMirrorControls(panel);
+        panel.layoutOptionsCache = {
           dn: entry.dn,
           sensorCount,
           options: optionKeys,
-          selectedKey: selectedLayoutKey,
+          selectedKey: panel.selectedLayoutKey,
           lang: currentLanguage
         };
-        updateHeatmap();
       }
 
       function updateDeviceOptions() {
-        // Some environments hide selector entirely / 某些环境可能完全隐藏设备选择器
-        if (!deviceSelector) {
-          return false;
-        }
-        // Build sorted list so UI order is stable / 排序以保持界面顺序稳定
         const devices = Array.from(state.keys()).sort();
-        const previousSelection = selectedDevice;
-        const listChanged = !arraysEqual(devices, deviceOptionsCache.devices);
-        const languageChanged = deviceOptionsCache.lang !== currentLanguage;
+        return updateDeviceOptionsWithList(devices);
+      }
 
-        if (!devices.length) {
-          // No devices yet – show waiting placeholder and reset caches / 尚无设备时显示等待提示并重置缓存
-          if (listChanged || languageChanged) {
-            deviceSelector.innerHTML = "";
-            const option = document.createElement("option");
-            option.value = "";
-            option.textContent = t("controls.waiting");
-            deviceSelector.appendChild(option);
+      function updateDeviceOptionsWithList(devices) {
+        let changed = false;
+        panelContexts.forEach((panel) => {
+          if (!panel.deviceSelector) {
+            return;
           }
-          deviceSelector.disabled = true;
-          deviceSelector.value = "";
-          selectedDevice = null;
-          deviceOptionsCache = { devices, selected: null, lang: currentLanguage };
-          layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null };
-          return listChanged || languageChanged || previousSelection !== null;
-        }
-
-        if (listChanged || languageChanged) {
-          // Recreate option tags when device list or language changes / 设备列表或语言变化时重新创建选项
-          deviceSelector.innerHTML = "";
-          devices.forEach((dn) => {
-            const option = document.createElement("option");
-            option.value = dn;
-            option.textContent = dn;
-            deviceSelector.appendChild(option);
-          });
-        }
-
-        if (!selectedDevice || !devices.includes(selectedDevice)) {
-          // Preserve prior choice when possible, else pick first / 若可能保留之前的选择，否则取第一项
-          selectedDevice = previousSelection && devices.includes(previousSelection)
-            ? previousSelection
-            : devices[0];
-        }
-
-        if (deviceSelector.value !== selectedDevice) {
-          deviceSelector.value = selectedDevice;
-        }
-        deviceSelector.disabled = false;
-
-        const selectionChanged = selectedDevice !== previousSelection;
-        deviceOptionsCache = { devices, selected: selectedDevice, lang: currentLanguage };
-        return listChanged || languageChanged || selectionChanged;
+          const previousSelection = panel.selectedDevice;
+          const listChanged = !arraysEqual(devices, panel.deviceOptionsCache.devices);
+          const languageChanged = panel.deviceOptionsCache.lang !== currentLanguage;
+          const isActive = panelIsActive(panel);
+          if (!devices.length) {
+            if (listChanged || languageChanged) {
+              panel.deviceSelector.innerHTML = '';
+              const option = document.createElement('option');
+              option.value = '';
+              option.textContent = t('controls.waiting');
+              panel.deviceSelector.appendChild(option);
+            }
+            panel.deviceSelector.disabled = true;
+            panel.deviceSelector.value = '';
+            panel.selectedDevice = null;
+            panel.selectedLayoutKey = null;
+            panel.deviceOptionsCache = { devices, selected: null, lang: currentLanguage };
+            panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
+            syncPanelMirrorControls(panel);
+            setPanelPlaceholder(panel, isActive ? "heatmap.empty.waiting" : "heatmap.empty.dual_disabled");
+            changed = true;
+            return;
+          }
+          if (listChanged || languageChanged) {
+            panel.deviceSelector.innerHTML = '';
+            devices.forEach((dn) => {
+              const option = document.createElement('option');
+              option.value = dn;
+              option.textContent = dn;
+              panel.deviceSelector.appendChild(option);
+            });
+          }
+          if (!panel.selectedDevice || !devices.includes(panel.selectedDevice)) {
+            panel.selectedDevice = chooseDefaultDeviceForPanel(panel, devices);
+          }
+          if (panel.deviceSelector.value !== panel.selectedDevice) {
+            panel.deviceSelector.value = panel.selectedDevice || '';
+          }
+          panel.deviceSelector.disabled = !isActive;
+          const selectionChanged = panel.selectedDevice !== previousSelection;
+          panel.deviceOptionsCache = { devices, selected: panel.selectedDevice, lang: currentLanguage };
+          if (selectionChanged) {
+            syncPanelMirrorControls(panel);
+          }
+          if (listChanged || languageChanged || selectionChanged) {
+            changed = true;
+          }
+        });
+        return changed;
       }
 
       // --- Dashboard summary (active devices only) ---
@@ -1079,6 +1272,44 @@
         }
         if (activeDevicesLabel) {
           activeDevicesLabel.textContent = active;
+        }
+      }
+
+      function formatAxisReading(value, options = {}) {
+        const scale = Number.isFinite(options.scale) ? options.scale : 1;
+        if (!Number.isFinite(value)) {
+          return "--";
+        }
+        const scaled = value * scale;
+        const abs = Math.abs(scaled);
+        let decimals = 0;
+        if (abs < 10) {
+          decimals = 2;
+        } else if (abs < 100) {
+          decimals = 1;
+        } else {
+          decimals = 0;
+        }
+        return scaled.toFixed(decimals);
+      }
+
+      function updateOverviewSensors() {
+        const entry = primaryPanel?.selectedDevice ? state.get(primaryPanel.selectedDevice) : null;
+        const gyro = entry && Array.isArray(entry.gyro) ? entry.gyro : null;
+        const acc = entry && Array.isArray(entry.acc) ? entry.acc : null;
+        ["x", "y", "z"].forEach((axis, idx) => {
+          if (gyroElements[axis]) {
+            const value = gyro && Number.isFinite(gyro[idx]) ? gyro[idx] : null;
+            gyroElements[axis].textContent = value !== null ? formatAxisReading(value) : "--";
+          }
+          if (accElements[axis]) {
+            const accValue = acc && Number.isFinite(acc[idx]) ? acc[idx] : null;
+            accElements[axis].textContent =
+              accValue !== null ? formatAxisReading(accValue, { scale: 9.8 }) : "--";
+          }
+        });
+        if (sensorSourceLabel) {
+          sensorSourceLabel.textContent = entry && entry.dn ? entry.dn : "--";
         }
       }
 
@@ -1099,11 +1330,14 @@
         lastRefreshTimestamp = Date.now();
         updateSummary();
         updateTable();
-        // Only rebuild layout selector when device list changed or selection valid / 仅在设备列表变化或仍有选择时更新布局
         const deviceChanged = updateDeviceOptions();
-        if (deviceChanged || selectedDevice !== null) {
-          updateLayoutOptions();
-        }
+        panelContexts.forEach((panel) => {
+          if (deviceChanged || panel.selectedDevice) {
+            updateLayoutOptionsForPanel(panel);
+          }
+        });
+        updateAllHeatmaps();
+        updateOverviewSensors();
         updateLastUpdateIndicator();
       }
 
@@ -1178,10 +1412,23 @@
         // Drop device state and any cached mirror preferences / 删除设备状态及其镜像偏好
         state.delete(dn);
         mirrorSettingsByDevice.delete(dn);
-        if (selectedDevice === dn) {
-          selectedDevice = null;
-          layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: layoutOptionsCache.lang };
-        }
+        panelContexts.forEach((panel) => {
+          if (panel.selectedDevice === dn) {
+            panel.selectedDevice = null;
+            panel.selectedLayoutKey = null;
+            panel.deviceOptionsCache.selected = null;
+            panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
+            if (panel.deviceSelector) {
+              panel.deviceSelector.value = "";
+            }
+            if (panel.layoutSelector) {
+              panel.layoutSelector.innerHTML = "";
+              panel.layoutSelector.disabled = true;
+            }
+            syncPanelMirrorControls(panel);
+            setPanelPlaceholder(panel, panelIsActive(panel) ? "heatmap.empty.no_device" : "heatmap.empty.dual_disabled");
+          }
+        });
         // Trigger full UI refresh so dropdown + table update / 触发整体刷新以更新下拉与表格
         refreshUI();
       }
@@ -1197,6 +1444,8 @@
         let sensorCount = null;
         let frameTime = null;
         let pressureValues = [];
+        let gyroValues = null;
+        let accValues = null;
         if (payload && typeof payload === "object") {
           const rawPressures = Array.isArray(payload.p) ? payload.p : [];
           // Coerce every reading into a number (or NaN) / 将每个读数转成数字（或 NaN）
@@ -1223,6 +1472,28 @@
           if (payload.ts) {
             frameTime = payload.ts * 1000;
           }
+          if (Array.isArray(payload.gyro)) {
+            const numericGyro = payload.gyro.map((value) => {
+              const num = Number(value);
+              return Number.isFinite(num) ? num : NaN;
+            });
+            gyroValues = [
+              Number.isFinite(numericGyro[0]) ? numericGyro[0] : NaN,
+              Number.isFinite(numericGyro[1]) ? numericGyro[1] : NaN,
+              Number.isFinite(numericGyro[2]) ? numericGyro[2] : NaN
+            ];
+          }
+          if (Array.isArray(payload.acc)) {
+            const numericAcc = payload.acc.map((value) => {
+              const num = Number(value);
+              return Number.isFinite(num) ? num : NaN;
+            });
+            accValues = [
+              Number.isFinite(numericAcc[0]) ? numericAcc[0] : NaN,
+              Number.isFinite(numericAcc[1]) ? numericAcc[1] : NaN,
+              Number.isFinite(numericAcc[2]) ? numericAcc[2] : NaN
+            ];
+          }
         }
         const receivedAt = entry.received_at ? Date.parse(entry.received_at) : Date.now();
         return {
@@ -1232,6 +1503,8 @@
           frameTime,
           receivedAt,
           pressureValues,
+          gyro: gyroValues,
+          acc: accValues,
           raw: entry
         };
       }
