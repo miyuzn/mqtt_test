@@ -11,3 +11,4 @@ mosquitto/log/
 
 # sink data
 app/mqtt_store/
+devmin/data/
