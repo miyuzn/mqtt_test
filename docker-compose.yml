@@ -92,6 +92,7 @@ services:
       - BRIDGE_READ_TIMEOUT=30
     volumes:
       - ./webapp:/app
+      - ./license:/license
     ports:
       - "5000:5000"
       - "5002:5002"

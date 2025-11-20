@@ -71,6 +71,61 @@
           <p class="form-feedback" id="form-feedback" aria-live="polite"></p>
         </form>
       </section>
+
+      <section class="panel license-panel">
+        <header class="panel-block-header">
+          <div>
+            <h3>License 配置下发</h3>
+            <p>生成 Base32 license 并通过 TCP 推送到设备，自动同步上方设备选择。</p>
+          </div>
+          <div class="badge" id="license-key-state">License service</div>
+        </header>
+        <form id="license-form">
+          <div class="field-group">
+            <div class="field">
+              <label for="license-dn">目标 DN / 设备码</label>
+              <input id="license-dn" placeholder="自动同步在线设备" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="license-ip">目标 IP</label>
+              <input id="license-ip" placeholder="自动同步设备 IP，亦可手填" autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="field-group">
+            <div class="field">
+              <label for="license-mac">设备码（12 位 HEX，可含冒号）</label>
+              <input id="license-mac" placeholder="E00AD6773866 或 00:11:22:33:44:55" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="license-days">有效天数</label>
+              <input id="license-days" type="number" min="1" step="1" placeholder="365" />
+            </div>
+          </div>
+
+          <div class="field-group">
+            <div class="field">
+              <label for="license-tier">License 类型</label>
+              <select id="license-tier">
+                <option value="basic">basic</option>
+                <option value="advanced">advanced</option>
+                <option value="pro">pro</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="license-port">TCP 端口</label>
+              <input id="license-port" type="number" min="1" max="65535" placeholder="22345" />
+            </div>
+          </div>
+
+          <div class="license-actions">
+            <button type="button" id="license-query" class="ghost-btn">查询设备 License</button>
+            <button type="submit" class="primary-btn">生成并下发 License</button>
+          </div>
+          <p class="form-feedback" id="license-feedback" aria-live="polite"></p>
+          <pre id="license-output" class="license-output" aria-live="polite">尚未发送请求</pre>
+        </form>
+      </section>
     </main>
 
     <section class="panel data-panel">
@@ -122,6 +177,14 @@
       </div>
     </section>
 
+    <script>
+      window.licenseDefaults = {{ {
+        "enabled": license_enabled,
+        "days": license_default_days,
+        "tier": license_default_tier,
+        "port": license_port,
+      } | tojson }};
+    </script>
     <script src="/static/js/config_console.js" type="module"></script>
   </body>
 </html>

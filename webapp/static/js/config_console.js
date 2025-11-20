@@ -24,6 +24,18 @@ const analogSelection = document.getElementById('analog-selection');
 const selectSelection = document.getElementById('select-selection');
 const devicesTableBody = document.getElementById('devices-table-body');
 const historyTableBody = document.getElementById('history-table-body');
+const licenseDefaults = window.licenseDefaults || {};
+const licenseForm = document.getElementById('license-form');
+const licenseDnInput = document.getElementById('license-dn');
+const licenseIpInput = document.getElementById('license-ip');
+const licenseMacInput = document.getElementById('license-mac');
+const licenseTierSelect = document.getElementById('license-tier');
+const licenseDaysInput = document.getElementById('license-days');
+const licensePortInput = document.getElementById('license-port');
+const licenseFeedback = document.getElementById('license-feedback');
+const licenseOutput = document.getElementById('license-output');
+const licenseQueryBtn = document.getElementById('license-query');
+const licenseKeyState = document.getElementById('license-key-state');
 
 const state = {
   devices: [],
@@ -63,6 +75,73 @@ const setFormFeedback = (message = '', isError = false) => {
   if (!formFeedback) return;
   formFeedback.textContent = message;
   formFeedback.dataset.state = isError ? 'error' : 'info';
+};
+
+const setLicenseFeedback = (message = '', isError = false) => {
+  if (!licenseFeedback) return;
+  licenseFeedback.textContent = message;
+  licenseFeedback.dataset.state = isError ? 'error' : 'info';
+};
+
+const normalizeMac = (value = '') => (value || '').replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+
+const applyLicenseDefaults = () => {
+  if (licenseDaysInput && licenseDefaults.days) {
+    licenseDaysInput.value = licenseDefaults.days;
+  }
+  if (licenseTierSelect && licenseDefaults.tier) {
+    licenseTierSelect.value = licenseDefaults.tier;
+  }
+  if (licensePortInput) {
+    const port = Number(licenseDefaults.port || licensePortInput.placeholder || 0);
+    if (port) {
+      licensePortInput.value = port;
+    }
+  }
+  if (licenseKeyState) {
+    const enabled = licenseDefaults.enabled !== false;
+    licenseKeyState.textContent = enabled ? 'License service ready' : 'License service unavailable';
+    licenseKeyState.dataset.state = enabled ? 'ok' : 'off';
+  }
+};
+
+function syncLicenseInputsFromDevice() {
+  if (!deviceSelect) return;
+  const option = deviceSelect.selectedOptions[0];
+  if (!option) return;
+  const dn = option.value || '';
+  const ip = option.dataset.ip || '';
+  if (licenseDnInput) {
+    licenseDnInput.value = dn;
+  }
+  if (licenseMacInput && (!licenseMacInput.value || licenseMacInput.dataset.autoFilled === '1')) {
+    licenseMacInput.value = dn;
+    licenseMacInput.dataset.autoFilled = '1';
+  }
+  if (licenseIpInput && (!licenseIpInput.value || licenseIpInput.dataset.autoFilled === '1')) {
+    licenseIpInput.value = ip;
+    licenseIpInput.dataset.autoFilled = '1';
+  }
+}
+
+const formatLicenseOutput = (payload = {}) => {
+  const lines = [];
+  if (payload.command_id) lines.push(`command_id: ${payload.command_id}`);
+  if (payload.status) lines.push(`status: ${payload.status}`);
+  if (payload.token) lines.push(`token: ${payload.token}`);
+  if (payload.tier) lines.push(`tier: ${payload.tier}`);
+  if (payload.device_code) lines.push(`device_code: ${payload.device_code}`);
+  if (payload.dn) lines.push(`dn: ${payload.dn}`);
+  if (payload.target_ip) lines.push(`target_ip: ${payload.target_ip}`);
+  if (payload.port) lines.push(`port: ${payload.port}`);
+  if (payload.expiry_iso || payload.expiry) {
+    lines.push(`expiry: ${payload.expiry_iso || payload.expiry}`);
+  }
+  if (payload.reply) lines.push(`device_reply: ${payload.reply}`);
+  if (payload.licenses) lines.push(`licenses: ${JSON.stringify(payload.licenses)}`);
+  if (payload.raw && !payload.reply) lines.push(`raw: ${payload.raw}`);
+  if (!lines.length) return JSON.stringify(payload, null, 2);
+  return lines.join('\n');
 };
 
 const updateModelPreview = () => {
@@ -223,6 +302,7 @@ async function loadDevices() {
     renderDeviceTable();
     updateMetrics();
     updateDeviceMeta(deviceSelect.selectedOptions[0]);
+    syncLicenseInputsFromDevice();
   } catch (error) {
     deviceMeta.textContent = error.message;
   }
@@ -238,8 +318,103 @@ async function loadResults() {
   }
 }
 
+async function handleLicenseSubmit(event) {
+  event.preventDefault();
+  if (!licenseForm) return;
+  if (licenseDefaults && licenseDefaults.enabled === false) {
+    setLicenseFeedback('License 服务未启用。', true);
+    return;
+  }
+  const dn = (licenseDnInput?.value || deviceSelect.value || '').trim().toUpperCase();
+  const mac = normalizeMac((licenseMacInput?.value || dn || '').trim());
+  const days = Number(licenseDaysInput?.value || licenseDefaults.days || 0);
+  const tier = (licenseTierSelect?.value || licenseDefaults.tier || 'basic').trim().toLowerCase();
+  let targetIp = (licenseIpInput?.value || '').trim();
+  if (!targetIp && deviceSelect?.selectedOptions?.length) {
+    targetIp = deviceSelect.selectedOptions[0].dataset.ip || '';
+  }
+  const portVal = Number(licensePortInput?.value || licenseDefaults.port || 0);
+
+  if (!mac || mac.length !== 12) {
+    setLicenseFeedback('请输入 12 位设备码（可带冒号）。', true);
+    return;
+  }
+  if (!Number.isInteger(days) || days <= 0) {
+    setLicenseFeedback('有效天数需为正整数。', true);
+    return;
+  }
+  const payload = {
+    device_code: mac,
+    days,
+    tier,
+  };
+  if (dn) payload.dn = dn;
+  if (targetIp) payload.target_ip = targetIp;
+  if (Number.isInteger(portVal) && portVal > 0) payload.port = portVal;
+
+  setLicenseFeedback('正在生成并下发 license...', false);
+  if (licenseOutput) {
+    licenseOutput.textContent = 'processing...';
+  }
+  try {
+    const resp = await fetchJSON('/api/license/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    setLicenseFeedback('命令已发布，等待采集端执行。', false);
+    if (licenseOutput) {
+      licenseOutput.textContent = formatLicenseOutput(resp);
+    }
+  } catch (error) {
+    setLicenseFeedback(`下发失败: ${error.message}`, true);
+    if (licenseOutput) {
+      licenseOutput.textContent = error.message;
+    }
+  }
+}
+
+async function handleLicenseQuery() {
+  if (licenseDefaults && licenseDefaults.enabled === false) {
+    setLicenseFeedback('License 服务未启用。', true);
+    return;
+  }
+  const dn = (licenseDnInput?.value || deviceSelect.value || '').trim().toUpperCase();
+  let targetIp = (licenseIpInput?.value || '').trim();
+  if (!targetIp && deviceSelect?.selectedOptions?.length) {
+    targetIp = deviceSelect.selectedOptions[0].dataset.ip || '';
+  }
+  const portVal = Number(licensePortInput?.value || licenseDefaults.port || 0);
+  if (!targetIp) {
+    setLicenseFeedback('请先选择设备或填写目标 IP。', true);
+    return;
+  }
+  const qs = new URLSearchParams();
+  qs.set('target_ip', targetIp);
+  if (dn) qs.set('dn', dn);
+  if (Number.isInteger(portVal) && portVal > 0) qs.set('port', portVal);
+
+  setLicenseFeedback('查询中...', false);
+  if (licenseOutput) {
+    licenseOutput.textContent = 'querying...';
+  }
+  try {
+    const resp = await fetchJSON(`/api/license/query?${qs.toString()}`);
+    setLicenseFeedback('查询命令已发布，等待采集端返回。', false);
+    if (licenseOutput) {
+      licenseOutput.textContent = formatLicenseOutput(resp);
+    }
+  } catch (error) {
+    setLicenseFeedback(`查询失败: ${error.message}`, true);
+    if (licenseOutput) {
+      licenseOutput.textContent = error.message;
+    }
+  }
+}
+
 function onDeviceChange() {
   updateDeviceMeta(deviceSelect.selectedOptions[0]);
+  syncLicenseInputsFromDevice();
 }
 
 async function handleSubmit(event) {
@@ -300,6 +475,7 @@ function debounce(fn, wait = 300) {
 }
 
 function init() {
+  applyLicenseDefaults();
   renderPinButtons('analog-grid', ANALOG_PRESETS, 'analog-input');
   renderPinButtons('select-grid', SELECT_PRESETS, 'select-input');
   syncPinButtons('analog-input');
@@ -313,6 +489,28 @@ function init() {
   refreshResultsBtn.addEventListener('click', () => loadResults());
   form.addEventListener('submit', handleSubmit);
   clearBtn.addEventListener('click', clearForm);
+  if (licenseMacInput) {
+    licenseMacInput.addEventListener('input', () => {
+      licenseMacInput.dataset.autoFilled = '0';
+    });
+  }
+  if (licenseIpInput) {
+    licenseIpInput.addEventListener('input', () => {
+      licenseIpInput.dataset.autoFilled = '0';
+    });
+  }
+  if (licenseForm) {
+    licenseForm.addEventListener('submit', handleLicenseSubmit);
+  }
+  if (licenseQueryBtn) {
+    licenseQueryBtn.addEventListener('click', handleLicenseQuery);
+  }
+  if (licenseForm && licenseDefaults && licenseDefaults.enabled === false) {
+    Array.from(licenseForm.elements).forEach((el) => {
+      if (el.id !== 'license-output') el.disabled = true;
+    });
+    setLicenseFeedback('License 服务未启用。', true);
+  }
   loadDevices();
   loadResults();
   setInterval(loadDevices, 8000);

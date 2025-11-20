@@ -156,6 +156,20 @@ class ConfigService:
                 active.append(info)
             return sorted(active, key=lambda item: item["dn"])
 
+    def get_device(self, dn: str) -> dict | None:
+        if not dn:
+            return None
+        now = time.time()
+        dn_key = dn.strip()
+        with self._lock:
+            info = self._devices.get(dn_key)
+            if not info:
+                return None
+            if now - self._to_epoch(info.get("last_seen")) > self._device_ttl:
+                self._devices.pop(dn_key, None)
+                return None
+            return dict(info)
+
     def list_results(self) -> List[dict]:
         with self._lock:
             return list(self._results)
@@ -173,6 +187,40 @@ class ConfigService:
         payload_obj, _ = build_payload(analog, select, model)
         command_id = str(uuid.uuid4())
         target_dn = (dn or "").replace(" ", "").replace("-", "").upper()
+        body = {
+            "command_id": command_id,
+            "target_dn": target_dn,
+            "payload": payload_obj,
+        }
+        if requested_by:
+            body["requested_by"] = requested_by
+        if target_ip:
+            body["target_ip"] = target_ip
+        result = self._client.publish(self._cmd_topic, payload=json.dumps(body, ensure_ascii=False), qos=1)
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise RuntimeError(f"MQTT 发布失败: {mqtt.error_string(result.rc)}")
+        return {"command_id": command_id, "dn": target_dn, "payload": payload_obj, "target_ip": target_ip}
+
+    def publish_license(
+        self,
+        dn: str,
+        token: str,
+        *,
+        requested_by: str | None = None,
+        target_ip: str | None = None,
+        port: int | None = None,
+        query: bool = False,
+    ) -> dict:
+        self._connected.wait(timeout=10)
+        command_id = str(uuid.uuid4())
+        target_dn = (dn or "").replace(" ", "").replace("-", "").upper()
+        payload_obj = {"type": "license_query" if query else "license"}
+        if query:
+            payload_obj["license"] = "?"
+        else:
+            payload_obj["license"] = token
+        if port:
+            payload_obj["port"] = int(port)
         body = {
             "command_id": command_id,
             "target_dn": target_dn,

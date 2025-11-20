@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import threading
+from pathlib import Path
 from typing import Iterator
 
 import requests
@@ -16,6 +17,7 @@ from flask import (
 )
 
 from config_backend import ConfigValidationError, build_config_service_from_env
+from license_backend import LicenseConfig, LicenseError, LicenseService
 
 """
 Tiny Flask app that proxies data from the MQTT bridge to the browser UI.
@@ -35,6 +37,15 @@ if BRIDGE_TIMEOUT_READ is not None:
 CONFIG_CONSOLE_PORT = int(os.getenv("CONFIG_CONSOLE_PORT", "5002"))
 CONFIG_CONSOLE_ENABLED = os.getenv("CONFIG_CONSOLE_ENABLED", "1") != "0"
 
+LICENSE_ENABLED = os.getenv("LICENSE_ENABLED", "1") != "0"
+_LICENSE_DIR_FALLBACK = Path(__file__).resolve().parent.parent / "license"
+LICENSE_KEY_PATH = Path(os.getenv("LICENSE_KEY_PATH", _LICENSE_DIR_FALLBACK / "priv.pem"))
+LICENSE_HISTORY_PATH_RAW = os.getenv("LICENSE_HISTORY_PATH", str(_LICENSE_DIR_FALLBACK / "licenses_history.json"))
+LICENSE_TCP_PORT = int(os.getenv("LICENSE_TCP_PORT", os.getenv("CONFIG_DEVICE_TCP_PORT", "22345")))
+LICENSE_TCP_TIMEOUT = float(os.getenv("LICENSE_TCP_TIMEOUT", "5"))
+LICENSE_DEFAULT_DAYS = int(os.getenv("LICENSE_DEFAULT_DAYS", "365"))
+LICENSE_DEFAULT_TIER = os.getenv("LICENSE_DEFAULT_TIER", "basic")
+
 app = Flask(__name__)
 config_app = Flask("config_console", template_folder="templates", static_folder="static")
 
@@ -47,6 +58,24 @@ if CONFIG_CONSOLE_ENABLED:
 else:
     config_service = None
 
+_license_history_path = Path(LICENSE_HISTORY_PATH_RAW) if LICENSE_HISTORY_PATH_RAW else None
+
+if LICENSE_ENABLED:
+    try:
+        license_config = LicenseConfig(
+            key_path=LICENSE_KEY_PATH,
+            history_path=_license_history_path,
+            default_port=LICENSE_TCP_PORT,
+            timeout=LICENSE_TCP_TIMEOUT,
+            tier_default=LICENSE_DEFAULT_TIER or "basic",
+        )
+        license_service = LicenseService(license_config)
+    except Exception as exc:  # pragma: no cover - 初始化容错
+        print(f"[config-web] failed to start license service: {exc}", file=sys.stderr)
+        license_service = None
+else:
+    license_service = None
+
 
 def _bridge_url(path: str) -> str:
     # Build absolute path lazily so deployments can override the base URL.
@@ -58,6 +87,21 @@ def _require_config_service():
     if config_service is None:
         abort(503, description="config service unavailable")
     return config_service
+
+
+def _require_license_service():
+    if license_service is None:
+        abort(503, description="license service unavailable")
+    return license_service
+
+
+def _resolve_ip_from_dn(dn: str) -> str | None:
+    if not dn or config_service is None:
+        return None
+    device = config_service.get_device(dn.strip())
+    if not device:
+        return None
+    return device.get("ip")
 
 
 def _parse_pins(value):
@@ -156,7 +200,14 @@ def healthz() -> Response:
 
 @config_app.route("/")
 def config_index() -> str:
-    return render_template("config_console.html", config_enabled=config_service is not None)
+    return render_template(
+        "config_console.html",
+        config_enabled=config_service is not None,
+        license_enabled=license_service is not None,
+        license_default_days=LICENSE_DEFAULT_DAYS,
+        license_default_tier=LICENSE_DEFAULT_TIER,
+        license_port=LICENSE_TCP_PORT,
+    )
 
 
 @config_app.route("/api/devices")
@@ -202,6 +253,91 @@ def config_apply() -> Response:
     except RuntimeError as exc:
         return jsonify({"error": "mqtt_publish_failed", "detail": str(exc)}), 502
     return jsonify({"status": "queued", **result})
+
+
+@config_app.route("/api/license/apply", methods=["POST"])
+def config_license_apply() -> Response:
+    cfg_svc = _require_config_service()
+    lic_svc = _require_license_service()
+    data = request.get_json(silent=True) or {}
+    dn = (data.get("dn") or data.get("target_dn") or data.get("device_dn") or "").strip().upper()
+    device_code = (data.get("device_code") or data.get("mac") or dn).replace(":", "").strip()
+    if not device_code:
+        return jsonify({"error": "device_code_required"}), 400
+    try:
+        days_val = int(data.get("days") or data.get("duration_days") or data.get("duration") or LICENSE_DEFAULT_DAYS)
+    except Exception:
+        return jsonify({"error": "days_invalid"}), 400
+    if days_val <= 0:
+        return jsonify({"error": "days_invalid"}), 400
+    tier = (data.get("tier") or LICENSE_DEFAULT_TIER).strip().lower() or LICENSE_DEFAULT_TIER
+    port_raw = data.get("port")
+    try:
+        port_val = int(port_raw) if port_raw is not None else LICENSE_TCP_PORT
+    except Exception:
+        return jsonify({"error": "port_invalid"}), 400
+    try:
+        token_entry = lic_svc.generate_token(device_code, days_val, tier)
+    except LicenseError as exc:
+        return jsonify({"error": "license_unavailable", "detail": str(exc)}), 503
+    except Exception as exc:
+        return jsonify({"error": "license_generate_failed", "detail": str(exc)}), 400
+    target_ip = (data.get("target_ip") or data.get("ip") or "").strip()
+    if not target_ip and dn:
+        target_ip = _resolve_ip_from_dn(dn)
+    try:
+        result = cfg_svc.publish_license(
+            dn=dn or device_code,
+            token=token_entry["token"],
+            requested_by=data.get("requested_by"),
+            target_ip=target_ip,
+            port=port_val,
+            query=False,
+        )
+    except RuntimeError as exc:
+        return jsonify({"error": "mqtt_publish_failed", "detail": str(exc)}), 502
+    result.update({
+        "status": "queued",
+        "dn": dn or device_code,
+        "target_ip": target_ip or None,
+        "port": port_val,
+        **token_entry,
+    })
+    return jsonify(result)
+
+
+@config_app.route("/api/license/query")
+def config_license_query() -> Response:
+    cfg_svc = _require_config_service()
+    dn = (request.args.get("dn") or request.args.get("target_dn") or request.args.get("device_dn") or "").strip().upper()
+    target_ip = (request.args.get("target_ip") or request.args.get("ip") or "").strip()
+    port_raw = request.args.get("port")
+    try:
+        port_val = int(port_raw) if port_raw else LICENSE_TCP_PORT
+    except Exception:
+        return jsonify({"error": "port_invalid"}), 400
+    if not target_ip and dn:
+        target_ip = _resolve_ip_from_dn(dn)
+    if not target_ip and not dn:
+        return jsonify({"error": "ip_required"}), 400
+    try:
+        result = cfg_svc.publish_license(
+            dn=dn or target_ip,
+            token="?",
+            requested_by=None,
+            target_ip=target_ip or None,
+            port=port_val,
+            query=True,
+        )
+    except RuntimeError as exc:
+        return jsonify({"error": "mqtt_publish_failed", "detail": str(exc)}), 502
+    result.update({
+        "status": "queued",
+        "dn": dn or None,
+        "target_ip": target_ip or None,
+        "port": port_val,
+    })
+    return jsonify(result)
 
 
 def _run_config_console():

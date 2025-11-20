@@ -445,8 +445,8 @@ def build_config_payload(analog, select, model):
     return payload_obj, payload_str
 
 
-def send_config_payload(ip: str, payload_str: str) -> dict:
-    addr = (ip, DEVICE_TCP_PORT)
+def _send_tcp_json(ip: str, payload_str: str, port: int) -> dict:
+    addr = (ip, port)
     with socket.create_connection(addr, timeout=DEVICE_TCP_TIMEOUT) as sock:
         sock.sendall(payload_str.encode("utf-8"))
         sock.settimeout(DEVICE_TCP_TIMEOUT)
@@ -468,6 +468,15 @@ def send_config_payload(ip: str, payload_str: str) -> dict:
         return json.loads(raw_reply)
     except json.JSONDecodeError:
         return {"raw": raw_reply}
+
+
+def send_config_payload(ip: str, payload_str: str, port: Optional[int] = None) -> dict:
+    return _send_tcp_json(ip, payload_str, port or DEVICE_TCP_PORT)
+
+
+def send_license_payload(ip: str, token: str, port: Optional[int] = None) -> dict:
+    payload_str = json.dumps({"license": token}, ensure_ascii=False) + "\n"
+    return _send_tcp_json(ip, payload_str, port or DEVICE_TCP_PORT)
 
 
 def publish_device_registry(client: mqtt.Client) -> None:
@@ -570,11 +579,55 @@ def execute_command(cmd: dict) -> dict:
         raise ConfigCommandError("target_dn is required")
     dn_hex = dn_to_hex(dn_raw)
     payload_section = cmd.get("payload") if isinstance(cmd.get("payload"), dict) else {}
+    cmd_type = (cmd.get("type") or payload_section.get("type") or "").strip().lower()
+    target_ip = cmd.get("ip") or cmd.get("target_ip") or payload_section.get("ip") or resolve_device_ip(dn_hex)
+    if cmd_type in ("license", "license_apply"):
+        token = payload_section.get("license") or payload_section.get("license_token") or cmd.get("license")
+        port = payload_section.get("port") or cmd.get("port")
+        if port is not None:
+            try:
+                port = int(port)
+            except Exception:
+                port = None
+        if not token:
+            raise ConfigCommandError("license token is required")
+        if not target_ip:
+            raise ConfigCommandError("Target DN currently is not associated with any IP")
+        reply = send_license_payload(target_ip, token, port=port)
+        return {
+            "command_id": command_id,
+            "dn": dn_hex,
+            "status": "ok",
+            "ip": target_ip,
+            "payload": {"license": token, "type": "license"},
+            "reply": reply,
+            "requested_by": cmd.get("requested_by") or payload_section.get("requested_by"),
+            "source_topic": cmd.get("_source_topic"),
+        }
+    if cmd_type in ("license_query", "license_query_only"):
+        port = payload_section.get("port") or cmd.get("port")
+        if port is not None:
+            try:
+                port = int(port)
+            except Exception:
+                port = None
+        if not target_ip:
+            raise ConfigCommandError("Target DN currently is not associated with any IP")
+        reply = send_license_payload(target_ip, "?", port=port)
+        return {
+            "command_id": command_id,
+            "dn": dn_hex,
+            "status": "ok",
+            "ip": target_ip,
+            "payload": {"license": "?", "type": "license_query"},
+            "reply": reply,
+            "requested_by": cmd.get("requested_by") or payload_section.get("requested_by"),
+            "source_topic": cmd.get("_source_topic"),
+        }
     analog = cmd.get("analog", payload_section.get("analog"))
     select = cmd.get("select", payload_section.get("select"))
     model = cmd.get("model", payload_section.get("model"))
     payload_obj, payload_str = build_config_payload(analog, select, model)
-    target_ip = cmd.get("ip") or cmd.get("target_ip") or payload_section.get("ip") or resolve_device_ip(dn_hex)
     if not target_ip:
         raise ConfigCommandError("Target DN currently is not associated with any IP")
     reply = send_config_payload(target_ip, payload_str)
