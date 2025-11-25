@@ -88,7 +88,7 @@ docker compose -f devmin/docker-compose.yml logs -f sink
 - 設定コンソール: http://localhost:5002
 
 ## ハードウェア
-- G-CU ファームウェア v4.1.1 以上を動かす ESP32 を使用 (https://github.com/Preston-Yu/G-CU/tree/main/Arduino/v4.1.1)。
+- G-CU ファームウェア v4.1.1 以上を動かす ESP32 を使用 https://github.com/Preston-Yu/G-CU/tree/main/Arduino/v4.1.1
 - 初回利用デバイスは設定コンソールからライセンスキーをプッシュする必要あり。正しいデバイス・ライセンスタイプ・有効期間を選び通常のパケットレートを得る。
 
 ## ネットワーク
@@ -165,7 +165,7 @@ docker compose -f devmin/docker-compose.yml logs -f sink
 - 配置控制台：http://localhost:5002
 
 ## 硬件
-- 使用运行 G-CU 固件 v4.1.1 或更高版本的 ESP32 (https://github.com/Preston-Yu/G-CU/tree/main/Arduino/v4.1.1)。
+- 使用运行 G-CU 固件 v4.1.1 或更高版本的 ESP32 https://github.com/Preston-Yu/G-CU/tree/main/Arduino/v4.1.1
 - 首次设备需要在配置控制台推送 License Key；选择正确的设备、许可类型和有效期以获得正常的包速率。
 
 ## 网络
