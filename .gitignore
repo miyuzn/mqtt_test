@@ -12,3 +12,7 @@ mosquitto/log/
 # sink data
 app/mqtt_store/
 devmin/data/
+
+# license
+license/licenses_history.json
+license/priv.pem
