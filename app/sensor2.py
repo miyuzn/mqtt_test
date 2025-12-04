@@ -160,7 +160,7 @@ def parse_sensor_data(data):
         # 设置压力传感器数据的起始位置
         pressure_start_position = 15
         # 解析每个压力传感器的整数值
-        pressure_sensors = [struct.unpack('<i', data[pressure_start_position + i * 4:pressure_start_position + (i + 1) * 4])[0]
+        pressure_sensors = [struct.unpack('<f', data[pressure_start_position + i * 4:pressure_start_position + (i + 1) * 4])[0]
                             for i in range(sn)]
         # 设置和解析磁力计、陀螺仪、加速度计数据的起始和结束位置
         magnetometer_start = pressure_start_position + sn * 4
@@ -279,7 +279,7 @@ def read_sensor_data_from_csv(filepath, p_num=35):
     df['Timestamp'] = df['Timestamp'].astype(float)
     
     # Extract sensor data
-    pressure_sensors = df[[f'P{i}' for i in range(1, p_num + 1)]].astype(int).values.tolist()
+    pressure_sensors = df[[f'P{i}' for i in range(1, p_num + 1)]].astype(float).values.tolist()
     magnetometer = df[['Mag_x', 'Mag_y', 'Mag_z']].astype(float).values.tolist()
     gyroscope = df[['Gyro_x', 'Gyro_y', 'Gyro_z']].astype(float).values.tolist()
     accelerometer = df[['Acc_x', 'Acc_y', 'Acc_z']].astype(float).values.tolist()
