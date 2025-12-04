@@ -15,10 +15,10 @@ devmin/data_receive_local.py
 from __future__ import annotations
 
 import os
-import sys
 import configparser
-import queue
+import socket
 import runpy
+import sys
 import threading
 import time
 from pathlib import Path
@@ -28,52 +28,37 @@ def _set_default_env(key: str, value: str) -> None:
     if not os.getenv(key):
         os.environ[key] = value
 
-def _load_startup(config_path: Path) -> float:
+def _load_startup(config_path: Path) -> tuple[float, int]:
     cfg = configparser.ConfigParser()
     cfg.read(config_path, encoding="utf-8")
     try:
         countdown = float(cfg.get("STARTUP", "FORWARD_COUNTDOWN_SEC", fallback="0").strip() or 0)
     except Exception:
         countdown = 0.0
-    return max(countdown, 0.0)
+    try:
+        udp_port = int(cfg.get("UDP", "LISTEN_PORT", fallback="13250").strip() or 13250)
+    except Exception:
+        udp_port = 13250
+    return max(countdown, 0.0), udp_port
 
-def _install_gate(dr: dict, gate: threading.Event) -> threading.Event:
-    """Replace data_receive.q with a gated queue that drops during countdown."""
-    pkt_drop_key = "pkt_drop"
-    dq_mod = dr.get("queue") or queue
-    maxsize = dr.get("Q_MAXSIZE", 0) or 0
-
-    def _inc_drop() -> None:
-        try:
-            dr[pkt_drop_key] = dr.get(pkt_drop_key, 0) + 1
-        except Exception:
-            pass
-
-    class GateQueue(dq_mod.Queue):
-        def __init__(self, maxsize: int = 0) -> None:
-            super().__init__(maxsize=maxsize)
-        def put(self, item, block=True, timeout=None):  # type: ignore[override]
-            if not gate.is_set():
-                _inc_drop()
-                return
-            return super().put(item, block=block, timeout=timeout)
-        def put_nowait(self, item):  # type: ignore[override]
-            return self.put(item, block=False)
-
-    gated_q = GateQueue(maxsize=maxsize)
-    dr["q"] = gated_q
-    return gate
-
-def _wrap_udp_ready(dr: dict, ready_evt: threading.Event) -> None:
-    """Signal readiness once UDP socket成功绑定。"""
-    orig_make = dr.get("make_udp_sock")
-    if not callable(orig_make):
+def _drain_udp(stop_evt: threading.Event, port: int) -> None:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind(("", port))
+    except Exception as exc:
+        print(f"[devmin][COUNTDOWN] UDP drain bind failed on :{port}: {exc}")
         return
-    def _make_udp_sock():
-        sock = orig_make()
-        ready_evt.set()
-        return sock
-    dr["make_udp_sock"] = _make_udp_sock
+    sock.settimeout(0.5)
+    buf = bytearray(8192)
+    view = memoryview(buf)
+    while not stop_evt.is_set():
+        try:
+            sock.recvfrom_into(view, len(buf))
+        except socket.timeout:
+            continue
+        except Exception:
+            break
+    sock.close()
 
 
 def main() -> None:
@@ -85,7 +70,7 @@ def main() -> None:
 
     config_path = devmin_dir / "config" / "data_receive.dev.ini"
     _set_default_env("CONFIG_PATH", str(config_path))
-    countdown_sec = _load_startup(config_path)
+    countdown_sec, udp_port = _load_startup(config_path)
 
     root_str = str(repo_root)
     app_str = str(repo_root / "app")
@@ -107,22 +92,15 @@ def main() -> None:
         f"{os.environ['MQTT_BROKER_HOST']}:{os.environ['MQTT_BROKER_PORT']}, "
         f"CONFIG_PATH={os.environ['CONFIG_PATH']}"
     )
-    # 载入 data_receive.py 但不立即触发 __main__ 分支，便于植入闸门
-    dr = runpy.run_path(str(entry), run_name="data_receive_bootstrap")
-    forward_gate = threading.Event()
-    ready_evt = threading.Event()
-    _install_gate(dr, forward_gate)
-    _wrap_udp_ready(dr, ready_evt)
 
-    def _countdown():
-        ready_evt.wait()
-        if countdown_sec <= 0:
-            forward_gate.set()
-            return
+    if countdown_sec > 0:
         banner = "=" * 64
         print(banner)
-        print(f"[devmin][COUNTDOWN] {countdown_sec:.1f}s 后开始转发，倒计时期间接收到的 UDP 数据将直接丢弃")
+        print(f"[devmin][COUNTDOWN] {countdown_sec:.1f}s 后开始转发，倒计时期间的 UDP 数据将被直接丢弃")
         print(banner)
+        stop_evt = threading.Event()
+        t = threading.Thread(target=_drain_udp, args=(stop_evt, udp_port), daemon=True)
+        t.start()
         whole = int(countdown_sec)
         frac = countdown_sec - whole
         for i in range(whole, 0, -1):
@@ -130,11 +108,11 @@ def main() -> None:
             time.sleep(1)
         if frac > 0:
             time.sleep(frac)
-        forward_gate.set()
+        stop_evt.set()
+        t.join(timeout=1.0)
         print("[devmin][COUNTDOWN] 倒计时结束，开始正式转发")
 
-    threading.Thread(target=_countdown, daemon=True).start()
-    dr["main"]()
+    runpy.run_path(str(entry), run_name="__main__")
 
 
 if __name__ == "__main__":
