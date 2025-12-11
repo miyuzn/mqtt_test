@@ -15,6 +15,7 @@ import json
 from datetime import datetime, timezone
 import uuid
 import re
+import ipaddress
 from typing import Dict, Tuple, Optional
 import paho.mqtt.client as mqtt
 
@@ -93,6 +94,12 @@ DEVICE_TCP_PORT         = get_conf("CONFIG", "DEVICE_TCP_PORT", 22345, int)
 DEVICE_TCP_TIMEOUT      = get_conf("CONFIG", "DEVICE_TCP_TIMEOUT", 3.0, float)
 REGISTRY_TTL            = get_conf("CONFIG", "REGISTRY_TTL", 300, int)
 REGISTRY_PUBLISH_SEC    = get_conf("CONFIG", "REGISTRY_PUBLISH_SEC", 5, int)
+DISCOVER_PORT           = get_conf("CONFIG", "DISCOVER_PORT", 22346, int)
+DISCOVER_MAGIC          = get_conf("CONFIG", "DISCOVER_MAGIC", "GCU_DISCOVER")
+DISCOVER_ATTEMPTS       = get_conf("CONFIG", "DISCOVER_ATTEMPTS", 2, int)
+DISCOVER_GAP            = get_conf("CONFIG", "DISCOVER_GAP", 0.15, float)
+DISCOVER_TIMEOUT        = get_conf("CONFIG", "DISCOVER_TIMEOUT", 5.0, float)
+DISCOVER_BROADCASTS     = get_conf("CONFIG", "DISCOVER_BROADCASTS", "")
 
 # GCU subscription / handshake settings
 GCU_ENABLED               = get_conf("GCU", "ENABLED", 1, int) == 1
@@ -348,8 +355,11 @@ def dn_to_hex(dn):
     elif isinstance(dn, int):
         b = dn.to_bytes(6, byteorder="little", signed=False)
     elif isinstance(dn, str):
-        hex_str = dn.replace(" ", "").replace("-", "")
-        b = bytes.fromhex(hex_str[-12:].rjust(12, "0"))
+        hex_str = dn.replace(" ", "").replace("-", "").replace(":", "")
+        try:
+            b = bytes.fromhex(hex_str[-12:].rjust(12, "0"))
+        except ValueError:
+            return dn.strip().upper()
     else:
         # Best-effort fallback / 尽量兜底
         b = bytes(bytearray(dn))
@@ -374,11 +384,18 @@ def quick_dn_from_payload(payload: bytes) -> Optional[str]:
 
 
 def update_device_registry(dn_hex: str, ip: Optional[str]) -> None:
+    """Normalize and store DN->IP mapping; ignore non-hex/short values."""
     if not dn_hex or not ip:
         return
+    dn_clean = normalize_dn_str(dn_hex)
+    if not dn_clean or len(dn_clean) < 8:
+        return
+    if not all(ch in "0123456789ABCDEF" for ch in dn_clean):
+        return
+    dn_norm = dn_clean[-12:] if len(dn_clean) >= 12 else dn_clean
     now = time.time()
     with registry_lock:
-        device_registry[dn_hex] = {"ip": ip, "last_seen": now}
+        device_registry[dn_norm] = {"ip": ip, "last_seen": now}
 
 
 def resolve_device_ip(dn_hex: str) -> Optional[str]:
@@ -395,12 +412,148 @@ def resolve_device_ip(dn_hex: str) -> Optional[str]:
             return None
         return entry.get("ip")
 
+def _parse_broadcast_list(raw: str) -> list[str]:
+    if not raw:
+        return []
+    return [part.strip() for part in str(raw).split(",") if part.strip()]
+
+
+def collect_broadcast_addrs() -> list[str]:
+    addrs = _parse_broadcast_list(DISCOVER_BROADCASTS)
+    try:
+        import psutil  # type: ignore
+
+        for iface_addrs in psutil.net_if_addrs().values():
+            for snic in iface_addrs:
+                if snic.family != socket.AF_INET:
+                    continue
+                if snic.broadcast:
+                    addrs.append(snic.broadcast)
+                elif snic.netmask and snic.address:
+                    try:
+                        iface = ipaddress.ip_interface(f"{snic.address}/{snic.netmask}")  # type: ignore
+                        addrs.append(str(iface.network.broadcast_address))
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+
+    addrs.append("255.255.255.255")
+    seen = set()
+    uniq = []
+    for addr in addrs:
+        if not addr or addr in seen or addr == "0.0.0.0":
+            continue
+        seen.add(addr)
+        uniq.append(addr)
+    return uniq
+
+
+def normalize_dn_str(value: str | None) -> str:
+    if not value:
+        return ""
+    return value.replace(":", "").replace("-", "").replace(" ", "").strip().upper()
+
+
+def discover_devices(
+    *,
+    broadcast_addrs: Optional[list[str]] = None,
+    attempts: int = DISCOVER_ATTEMPTS,
+    gap: float = DISCOVER_GAP,
+    timeout: float = DISCOVER_TIMEOUT,
+) -> tuple[list[dict], list[str]]:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.settimeout(timeout)
+    sock.bind(("", 0))
+
+    targets = broadcast_addrs or collect_broadcast_addrs()
+    deadline = time.time() + max(timeout, 0.1)
+    try:
+        for _ in range(max(1, attempts)):
+            for addr in targets:
+                try:
+                    sock.sendto(DISCOVER_MAGIC.encode("ascii", "ignore"), (addr, DISCOVER_PORT))
+                except OSError:
+                    continue
+            if gap > 0:
+                time.sleep(gap)
+
+        results: list[dict] = []
+        seen = set()
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            try:
+                sock.settimeout(remaining)
+                data, addr = sock.recvfrom(1024)
+            except socket.timeout:
+                break
+            except OSError:
+                break
+            if not data:
+                continue
+            try:
+                obj = json.loads(data.decode(errors="ignore"))
+                obj["from"] = addr[0]
+                sig = (obj.get("ip"), obj.get("mac"), obj.get("model"), obj.get("port"))
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                results.append(obj)
+            except Exception:
+                continue
+        return results, targets
+    finally:
+        sock.close()
+
+
+def resolve_ip_with_discovery(dn_hex: str, target_ip: Optional[str]) -> tuple[Optional[str], list[dict], list[str]]:
+    if target_ip:
+        return target_ip, [], []
+    devices, targets = discover_devices()
+    chosen_ip = None
+    dn_key = normalize_dn_str(dn_hex)
+    if dn_key:
+        for item in devices:
+            mac = normalize_dn_str(item.get("dn") or item.get("mac") or item.get("device_code") or item.get("ip"))
+            if mac and mac == dn_key:
+                chosen_ip = item.get("ip") or item.get("from")
+                break
+    if chosen_ip is None and len(devices) == 1:
+        chosen_ip = devices[0].get("ip") or devices[0].get("from")
+    if chosen_ip:
+        update_device_registry(dn_key, chosen_ip)
+    return chosen_ip, devices, targets
+
+
+def pick_port_from_discovery(chosen_ip: Optional[str], discoveries: list[dict], default_port: int) -> int:
+    if not chosen_ip:
+        return default_port
+    for item in discoveries:
+        ip_val = item.get("ip") or item.get("from")
+        if ip_val and ip_val == chosen_ip:
+            try:
+                port_val = int(item.get("port"))
+                if port_val > 0:
+                    return port_val
+            except Exception:
+                continue
+    return default_port
+
 
 def registry_snapshot() -> dict:
     now = time.time()
     items = []
     with registry_lock:
-        stale = [dn for dn, rec in device_registry.items() if now - float(rec.get("last_seen", 0)) > REGISTRY_TTL]
+        stale = [
+            dn for dn, rec in device_registry.items()
+            if now - float(rec.get("last_seen", 0)) > REGISTRY_TTL
+            or not dn
+            or len(str(dn)) < 10
+            or not all(ch in "0123456789ABCDEF" for ch in str(dn).upper())
+        ]
         for dn in stale:
             device_registry.pop(dn, None)
         for dn, rec in device_registry.items():
@@ -554,7 +707,7 @@ def command_worker(client: mqtt.Client):
         except queue.Empty:
             continue
         try:
-            result = execute_command(cmd)
+            result = execute_command(cmd, client)
             publish_command_result(client, result)
         except ConfigCommandError as exc:
             publish_command_result(client, {
@@ -572,7 +725,7 @@ def command_worker(client: mqtt.Client):
             })
 
 
-def execute_command(cmd: dict) -> dict:
+def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
     command_id = cmd.get("command_id") or f"cmd-{int(time.time()*1000)}"
     dn_raw = cmd.get("target_dn") or cmd.get("dn")
     if not dn_raw:
@@ -581,6 +734,80 @@ def execute_command(cmd: dict) -> dict:
     payload_section = cmd.get("payload") if isinstance(cmd.get("payload"), dict) else {}
     cmd_type = (cmd.get("type") or payload_section.get("type") or "").strip().lower()
     target_ip = cmd.get("ip") or cmd.get("target_ip") or payload_section.get("ip") or resolve_device_ip(dn_hex)
+    discoveries: list[dict] = []
+    broadcast_targets: list[str] = []
+    if not target_ip:
+        target_ip, discoveries, broadcast_targets = resolve_ip_with_discovery(dn_hex, target_ip)
+    # Generic control payload path (standby/filter/calibration/spiffs or explicit raw/custom)
+    control_keys = ("standby", "filter", "calibration", "spiffs")
+    if cmd_type in ("raw", "custom", "control") or any(k in payload_section for k in control_keys):
+        if not target_ip:
+            raise ConfigCommandError("Target DN currently is not associated with any IP (discovery failed)")
+        payload_str = json.dumps(payload_section, ensure_ascii=False) + "\n"
+        port = payload_section.get("port") or cmd.get("port")
+        if port is not None:
+            try:
+                port = int(port)
+            except Exception:
+                port = None
+        reply = send_config_payload(target_ip, payload_str, port=port)
+        return {
+            "command_id": command_id,
+            "dn": dn_hex,
+            "status": "ok",
+            "ip": target_ip,
+            "payload": payload_section,
+            "reply": reply,
+            "requested_by": cmd.get("requested_by") or payload_section.get("requested_by"),
+            "source_topic": cmd.get("_source_topic"),
+            "discoveries": discoveries,
+            "broadcast": broadcast_targets,
+        }
+    if cmd_type in ("discover", "discover_only", "discover_devices"):
+        attempts = payload_section.get("attempts") or cmd.get("attempts")
+        gap = payload_section.get("gap") or cmd.get("gap")
+        timeout = payload_section.get("timeout") or cmd.get("timeout")
+        broadcasts = payload_section.get("broadcast") or payload_section.get("broadcast_addrs") or cmd.get("broadcast")
+        try:
+            attempts = int(attempts) if attempts is not None else DISCOVER_ATTEMPTS
+        except Exception:
+            attempts = DISCOVER_ATTEMPTS
+        try:
+            gap = float(gap) if gap is not None else DISCOVER_GAP
+        except Exception:
+            gap = DISCOVER_GAP
+        try:
+            timeout = float(timeout) if timeout is not None else DISCOVER_TIMEOUT
+        except Exception:
+            timeout = DISCOVER_TIMEOUT
+        broadcast_list = _parse_broadcast_list(broadcasts) if broadcasts else collect_broadcast_addrs()
+        discoveries, targets = discover_devices(
+            broadcast_addrs=broadcast_list,
+            attempts=max(1, attempts),
+            gap=max(0.0, gap),
+            timeout=max(0.1, timeout),
+        )
+        for item in discoveries:
+            dn_val = normalize_dn_str(item.get("dn") or item.get("mac") or item.get("device_code") or item.get("ip"))
+            if dn_val and item.get("ip") or item.get("from"):
+                update_device_registry(dn_val, item.get("ip") or item.get("from"))
+        if client is not None:
+            try:
+                publish_device_registry(client)
+            except Exception:
+                pass
+        return {
+            "command_id": command_id,
+            "dn": "BROADCAST",
+            "status": "ok",
+            "ip": None,
+            "payload": {"type": "discover", "attempts": attempts, "gap": gap, "timeout": timeout, "broadcast": targets},
+            "reply": {"count": len(discoveries), "items": discoveries},
+            "requested_by": cmd.get("requested_by") or payload_section.get("requested_by"),
+            "source_topic": cmd.get("_source_topic"),
+            "discoveries": discoveries,
+            "broadcast": targets,
+        }
     if cmd_type in ("license", "license_apply"):
         token = payload_section.get("license") or payload_section.get("license_token") or cmd.get("license")
         port = payload_section.get("port") or cmd.get("port")
@@ -589,10 +816,12 @@ def execute_command(cmd: dict) -> dict:
                 port = int(port)
             except Exception:
                 port = None
+        if port is None:
+            port = pick_port_from_discovery(target_ip, discoveries, DEVICE_TCP_PORT)
         if not token:
             raise ConfigCommandError("license token is required")
         if not target_ip:
-            raise ConfigCommandError("Target DN currently is not associated with any IP")
+            raise ConfigCommandError("Target DN currently is not associated with any IP (discovery failed)")
         reply = send_license_payload(target_ip, token, port=port)
         return {
             "command_id": command_id,
@@ -603,6 +832,8 @@ def execute_command(cmd: dict) -> dict:
             "reply": reply,
             "requested_by": cmd.get("requested_by") or payload_section.get("requested_by"),
             "source_topic": cmd.get("_source_topic"),
+            "discoveries": discoveries,
+            "broadcast": broadcast_targets,
         }
     if cmd_type in ("license_query", "license_query_only"):
         port = payload_section.get("port") or cmd.get("port")
@@ -611,8 +842,10 @@ def execute_command(cmd: dict) -> dict:
                 port = int(port)
             except Exception:
                 port = None
+        if port is None:
+            port = pick_port_from_discovery(target_ip, discoveries, DEVICE_TCP_PORT)
         if not target_ip:
-            raise ConfigCommandError("Target DN currently is not associated with any IP")
+            raise ConfigCommandError("Target DN currently is not associated with any IP (discovery failed)")
         reply = send_license_payload(target_ip, "?", port=port)
         return {
             "command_id": command_id,
@@ -623,13 +856,17 @@ def execute_command(cmd: dict) -> dict:
             "reply": reply,
             "requested_by": cmd.get("requested_by") or payload_section.get("requested_by"),
             "source_topic": cmd.get("_source_topic"),
+            "discoveries": discoveries,
+            "broadcast": broadcast_targets,
         }
     analog = cmd.get("analog", payload_section.get("analog"))
     select = cmd.get("select", payload_section.get("select"))
     model = cmd.get("model", payload_section.get("model"))
     payload_obj, payload_str = build_config_payload(analog, select, model)
     if not target_ip:
-        raise ConfigCommandError("Target DN currently is not associated with any IP")
+        target_ip, discoveries, broadcast_targets = resolve_ip_with_discovery(dn_hex, target_ip)
+    if not target_ip:
+        raise ConfigCommandError("Target DN currently is not associated with any IP (discovery failed)")
     reply = send_config_payload(target_ip, payload_str)
     return {
         "command_id": command_id,
@@ -640,6 +877,8 @@ def execute_command(cmd: dict) -> dict:
         "reply": reply,
         "requested_by": cmd.get("requested_by") or payload_section.get("requested_by"),
         "source_topic": cmd.get("_source_topic"),
+        "discoveries": discoveries,
+        "broadcast": broadcast_targets,
     }
 
 def mqtt_worker():

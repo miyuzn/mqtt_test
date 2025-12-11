@@ -11,6 +11,8 @@ devmin/data_receive_local.py
 使用方式：
     python devmin/data_receive_local.py
 """
+#
+# Note: data_receive.py now includes broadcast discovery + direct TCP send; this runner reuses it.
 
 from __future__ import annotations
 
@@ -49,6 +51,12 @@ def main() -> None:
     _set_default_env("BROKER_HOST", mqtt_host)
     _set_default_env("MQTT_BROKER_PORT", str(mqtt_port))
     _set_default_env("BROKER_PORT", str(mqtt_port))
+    _set_default_env("CONFIG_DISCOVER_BROADCASTS", os.getenv("CONFIG_DISCOVER_BROADCASTS", ""))
+    _set_default_env("CONFIG_DISCOVER_ATTEMPTS", os.getenv("CONFIG_DISCOVER_ATTEMPTS", "2"))
+    _set_default_env("CONFIG_DISCOVER_GAP", os.getenv("CONFIG_DISCOVER_GAP", "0.15"))
+    _set_default_env("CONFIG_DISCOVER_TIMEOUT", os.getenv("CONFIG_DISCOVER_TIMEOUT", "5"))
+    _set_default_env("CONFIG_DISCOVER_PORT", os.getenv("CONFIG_DISCOVER_PORT", "22346"))
+    _set_default_env("CONFIG_DISCOVER_MAGIC", os.getenv("CONFIG_DISCOVER_MAGIC", "GCU_DISCOVER"))
 
     print(
         "[devmin] 启动 data_receive.py，MQTT="

@@ -235,6 +235,63 @@ class ConfigService:
             raise RuntimeError(f"MQTT 发布失败: {mqtt.error_string(result.rc)}")
         return {"command_id": command_id, "dn": target_dn, "payload": payload_obj, "target_ip": target_ip}
 
+    def publish_custom(
+        self,
+        dn: str,
+        payload_obj: dict,
+        *,
+        requested_by: str | None = None,
+        target_ip: str | None = None,
+    ) -> dict:
+        self._connected.wait(timeout=10)
+        command_id = str(uuid.uuid4())
+        target_dn = (dn or "").replace(" ", "").replace("-", "").upper()
+        body = {
+            "command_id": command_id,
+            "target_dn": target_dn,
+            "payload": payload_obj,
+        }
+        if requested_by:
+            body["requested_by"] = requested_by
+        if target_ip:
+            body["target_ip"] = target_ip
+        result = self._client.publish(self._cmd_topic, payload=json.dumps(body, ensure_ascii=False), qos=1)
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise RuntimeError(f"MQTT 发布失败: {mqtt.error_string(result.rc)}")
+        return {"command_id": command_id, "dn": target_dn, "payload": payload_obj, "target_ip": target_ip}
+
+    def publish_discover(
+        self,
+        *,
+        attempts: int | None = None,
+        gap: float | None = None,
+        timeout: float | None = None,
+        broadcast: list[str] | None = None,
+        requested_by: str | None = None,
+    ) -> dict:
+        self._connected.wait(timeout=10)
+        command_id = str(uuid.uuid4())
+        payload_obj: dict = {"type": "discover"}
+        if attempts is not None:
+            payload_obj["attempts"] = attempts
+        if gap is not None:
+            payload_obj["gap"] = gap
+        if timeout is not None:
+            payload_obj["timeout"] = timeout
+        if broadcast:
+            payload_obj["broadcast"] = broadcast
+        body = {
+            "command_id": command_id,
+            "target_dn": "BROADCAST",
+            "payload": payload_obj,
+        }
+        if requested_by:
+            body["requested_by"] = requested_by
+        result = self._client.publish(self._cmd_topic, payload=json.dumps(body, ensure_ascii=False), qos=1)
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise RuntimeError(f"MQTT 发布失败: {mqtt.error_string(result.rc)}")
+        return {"command_id": command_id, "dn": "BROADCAST", "payload": payload_obj}
+
     def stop(self) -> None:
         try:
             self._client.loop_stop()

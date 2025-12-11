@@ -2,6 +2,9 @@ import json
 import os
 import sys
 import threading
+import uuid
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -17,6 +20,13 @@ from flask import (
 )
 
 from config_backend import ConfigValidationError, build_config_service_from_env
+from discovery_backend import (
+    DEFAULT_PORT as CONFIG_DEVICE_TCP_PORT,
+    DEFAULT_TIMEOUT as DISCOVER_DEFAULT_TIMEOUT,
+    collect_broadcast_addrs,
+    discover_devices as discover_lan_devices,
+    send_device_payload,
+)
 from license_backend import LicenseConfig, LicenseError, LicenseService
 
 """
@@ -45,6 +55,8 @@ LICENSE_TCP_PORT = int(os.getenv("LICENSE_TCP_PORT", os.getenv("CONFIG_DEVICE_TC
 LICENSE_TCP_TIMEOUT = float(os.getenv("LICENSE_TCP_TIMEOUT", "5"))
 LICENSE_DEFAULT_DAYS = int(os.getenv("LICENSE_DEFAULT_DAYS", "365"))
 LICENSE_DEFAULT_TIER = os.getenv("LICENSE_DEFAULT_TIER", "basic")
+DISCOVER_DEFAULT_ATTEMPTS = int(os.getenv("CONFIG_DISCOVER_ATTEMPTS", "2"))
+DISCOVER_DEFAULT_GAP = float(os.getenv("CONFIG_DISCOVER_GAP", "0.2"))
 
 app = Flask(__name__)
 config_app = Flask("config_console", template_folder="templates", static_folder="static")
@@ -75,6 +87,9 @@ if LICENSE_ENABLED:
         license_service = None
 else:
     license_service = None
+
+
+_direct_results = deque(maxlen=50)
 
 
 def _bridge_url(path: str) -> str:
@@ -113,6 +128,66 @@ def _parse_pins(value):
         tokens = [item.strip() for item in value.replace("\n", ",").split(",")]
         return [int(token) for token in tokens if token]
     raise ValueError("pin list must be array or comma separated string")
+
+
+def _normalize_dn(value: str | None) -> str:
+    if not value:
+        return ""
+    return value.replace(":", "").replace("-", "").strip().upper()
+
+
+def _parse_broadcast_inputs(raw) -> list[str]:
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        parts = [part.strip() for part in raw.split(",")]
+    elif isinstance(raw, (list, tuple, set)):
+        parts = [str(item).strip() for item in raw]
+    else:
+        parts = [str(raw).strip()]
+    return [item for item in parts if item]
+
+
+def _resolve_ip_from_discovery(dn: str | None, target_ip: str | None, devices: list[dict]) -> str | None:
+    if target_ip:
+        return target_ip
+    dn_key = _normalize_dn(dn or "")
+    if dn_key:
+        for item in devices:
+            mac = _normalize_dn(item.get("dn") or item.get("mac") or item.get("device_code"))
+            if mac and mac == dn_key:
+                return item.get("ip") or item.get("from")
+    if len(devices) == 1:
+        return devices[0].get("ip") or devices[0].get("from")
+    return None
+
+
+def _extract_direct_payload(data: dict):
+    payload_section = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+    if payload_section:
+        return payload_section
+    analog_raw = data.get("analog") if data.get("analog") is not None else payload_section.get("analog")
+    select_raw = data.get("select") if data.get("select") is not None else payload_section.get("select")
+    try:
+        analog = _parse_pins(analog_raw)
+        select = _parse_pins(select_raw)
+    except Exception as exc:
+        raise ConfigValidationError(str(exc))
+    if analog is None and select is None:
+        return None
+    return {
+        "analog": analog or [],
+        "select": select or [],
+        "model": data.get("model") or payload_section.get("model"),
+    }
+
+
+def _merge_results() -> list[dict]:
+    items: list[dict] = list(_direct_results)
+    if config_service:
+        items.extend(config_service.list_results())
+    items.sort(key=lambda item: item.get("timestamp") or "", reverse=True)
+    return items[:50]
 
 
 @app.route("/")
@@ -216,10 +291,61 @@ def config_devices() -> Response:
     return jsonify({"items": svc.list_devices()})
 
 
+@config_app.route("/api/discover", methods=["POST"])
+def config_discover() -> Response:
+    svc = _require_config_service()
+    payload = request.get_json(silent=True) or {}
+    attempts = payload.get("attempts")
+    gap = payload.get("gap")
+    timeout = payload.get("timeout")
+    broadcast = _parse_broadcast_inputs(payload.get("broadcast") or payload.get("broadcast_addrs"))
+    try:
+        result = svc.publish_discover(
+            attempts=int(attempts) if attempts is not None else None,
+            gap=float(gap) if gap is not None else None,
+            timeout=float(timeout) if timeout is not None else None,
+            broadcast=broadcast or None,
+            requested_by=payload.get("requested_by"),
+        )
+    except RuntimeError as exc:
+        return jsonify({"error": "mqtt_publish_failed", "detail": str(exc)}), 502
+    return jsonify({
+        "status": "queued",
+        **result,
+        "attempts": attempts,
+        "gap": gap,
+        "timeout": timeout,
+        "broadcast": broadcast or [],
+    })
+
+
 @config_app.route("/api/commands/latest")
 def config_results() -> Response:
+    items = _merge_results()
+    return jsonify({"items": items})
+
+
+@config_app.route("/api/config/control", methods=["POST"])
+def config_control() -> Response:
     svc = _require_config_service()
-    return jsonify({"items": svc.list_results()})
+    data = request.get_json(silent=True) or {}
+    dn = (data.get("dn") or data.get("target_dn") or data.get("device_dn") or data.get("mac") or "").strip()
+    if not dn:
+        return jsonify({"error": "dn_required"}), 400
+    payload_obj = data.get("payload")
+    if not isinstance(payload_obj, dict):
+        return jsonify({"error": "payload_required"}), 400
+    target_ip = (data.get("target_ip") or data.get("ip") or payload_obj.get("target_ip") or "").strip() or None
+    try:
+        result = svc.publish_custom(
+            dn,
+            payload_obj,
+            requested_by=data.get("requested_by"),
+            target_ip=target_ip,
+        )
+    except RuntimeError as exc:
+        return jsonify({"error": "mqtt_publish_failed", "detail": str(exc)}), 502
+    return jsonify({"status": "queued", **result})
 
 
 @config_app.route("/api/config/apply", methods=["POST"])
@@ -253,6 +379,74 @@ def config_apply() -> Response:
     except RuntimeError as exc:
         return jsonify({"error": "mqtt_publish_failed", "detail": str(exc)}), 502
     return jsonify({"status": "queued", **result})
+
+
+@config_app.route("/api/config/direct", methods=["POST"])
+def config_apply_direct() -> Response:
+    data = request.get_json(silent=True) or {}
+    dn_raw = data.get("dn") or data.get("target_dn") or data.get("device_dn") or data.get("mac")
+    dn = _normalize_dn(dn_raw or "")
+    target_ip = (data.get("target_ip") or data.get("ip") or "").strip()
+    try:
+        port = int(data.get("port") or CONFIG_DEVICE_TCP_PORT)
+    except Exception:
+        return jsonify({"error": "port_invalid"}), 400
+
+    try:
+        payload_obj = _extract_direct_payload(data)
+    except ConfigValidationError as exc:
+        return jsonify({"error": "invalid_payload", "detail": str(exc)}), 400
+    if payload_obj is None:
+        return jsonify({"error": "payload_required"}), 400
+
+    attempts = int(data.get("attempts") or DISCOVER_DEFAULT_ATTEMPTS)
+    gap = float(data.get("gap") or DISCOVER_DEFAULT_GAP)
+    timeout = float(data.get("timeout") or DISCOVER_DEFAULT_TIMEOUT)
+    broadcast = _parse_broadcast_inputs(data.get("broadcast") or data.get("broadcast_addrs"))
+
+    devices, broadcast_targets = discover_lan_devices(
+        broadcast_addrs=broadcast or collect_broadcast_addrs(),
+        attempts=max(1, attempts),
+        gap=max(0.0, gap),
+        timeout=max(0.1, timeout),
+    )
+    resolved_ip = _resolve_ip_from_discovery(dn, target_ip, devices)
+    if not resolved_ip:
+        return jsonify({
+            "error": "ip_unresolved",
+            "detail": "未能通过广播匹配到目标 IP，请手动填写或检查设备响应。",
+            "discoveries": devices,
+            "broadcast": broadcast_targets,
+        }), 400
+
+    status = "ok"
+    reply = {}
+    try:
+        send_result = send_device_payload(resolved_ip, payload_obj, port=port, timeout=timeout)
+        reply = send_result.get("json") if isinstance(send_result.get("json"), dict) else {}
+        if not reply:
+            raw = send_result.get("raw")
+            if raw:
+                reply = {"raw": raw}
+        reply.setdefault("status", "ok")
+    except Exception as exc:
+        status = "error"
+        reply = {"status": "error", "error": str(exc)}
+
+    entry = {
+        "command_id": data.get("command_id") or str(uuid.uuid4()),
+        "dn": dn or None,
+        "status": status,
+        "ip": resolved_ip,
+        "port": port,
+        "payload": payload_obj,
+        "reply": reply,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "method": "direct",
+        "broadcast": broadcast_targets,
+    }
+    _direct_results.appendleft(entry)
+    return jsonify({**entry, "discoveries": devices}), (200 if status == "ok" else 502)
 
 
 @config_app.route("/api/license/apply", methods=["POST"])

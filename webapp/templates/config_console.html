@@ -38,6 +38,18 @@
             </div>
           </div>
 
+          <div class="field-group">
+            <div class="field">
+              <label for="manual-dn">Device DN / MAC (manual input supported)</label>
+              <input id="manual-dn" placeholder="Auto-fill from discovery or type 12-digit MAC" list="device-dn-options" autocomplete="off" />
+              <datalist id="device-dn-options"></datalist>
+            </div>
+            <div class="field">
+              <label for="manual-ip">Target IP (discovered or manual)</label>
+              <input id="manual-ip" placeholder="Auto-sync discovered IP, can be overridden" autocomplete="off" />
+            </div>
+          </div>
+
           <div class="field">
             <label for="model-select">Select PCB model</label>
             <select id="model-select">
@@ -70,6 +82,101 @@
           </footer>
           <p class="form-feedback" id="form-feedback" aria-live="polite"></p>
         </form>
+
+        <section class="panel control-panel">
+          <header class="panel-block-header">
+            <div>
+              <h3>设备控制 / 维护命令</h3>
+              <p>透传 standby / filter / calibration / SPIFFS 等 JSON 指令到设备</p>
+            </div>
+          </header>
+          <form id="control-form">
+            <div class="field">
+              <label for="control-action">选择命令</label>
+              <select id="control-action">
+                <option value="standby_enable">进入待机模式</option>
+                <option value="standby_disable">退出待机模式</option>
+                <option value="filter_query">查询滤波配置</option>
+                <option value="filter_set">设置滤波配置</option>
+                <option value="calib_enable">校准启用</option>
+                <option value="calib_disable">校准禁用</option>
+                <option value="calib_status">查询校准状态</option>
+                <option value="calib_collect">校准采集</option>
+                <option value="calib_level_query">查询某标定 level</option>
+                <option value="calib_level_delete">删除某标定 level</option>
+                <option value="spiffs_list">SPIFFS 列表</option>
+                <option value="spiffs_read">SPIFFS 读取</option>
+                <option value="spiffs_write">SPIFFS 写入</option>
+                <option value="spiffs_delete">SPIFFS 删除</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <label for="control-port">TCP 端口（可空）</label>
+                <input id="control-port" type="number" min="1" max="65535" placeholder="22345" />
+              </div>
+              <div class="field">
+                <label for="control-level">标定 level / 路径等可复用字段</label>
+                <input id="control-level" placeholder="例如 0.5 或 /path" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <label for="control-alpha">滤波 alpha</label>
+                <input id="control-alpha" type="number" step="0.01" min="0" max="1" placeholder="0.3" />
+              </div>
+              <div class="field">
+                <label for="control-median">滤波中值窗 (1/3/5)</label>
+                <input id="control-median" type="number" min="1" max="9" step="1" placeholder="3" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <label for="control-analogpin">AnalogPin</label>
+                <input id="control-analogpin" type="number" min="0" />
+              </div>
+              <div class="field">
+                <label for="control-selectpin">SelectPin</label>
+                <input id="control-selectpin" type="number" min="0" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <label for="control-start-time">开始前等待 (ms)</label>
+                <input id="control-start-time" type="number" min="0" placeholder="1000" />
+              </div>
+              <div class="field">
+                <label for="control-calib-time">采集时长 (ms)</label>
+                <input id="control-calib-time" type="number" min="0" placeholder="5000" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <label for="control-path">SPIFFS 路径</label>
+                <input id="control-path" placeholder="/calib_0.00.csv 或 /" />
+              </div>
+              <div class="field">
+                <label for="control-limit">读取限制字节 (可空)</label>
+                <input id="control-limit" type="number" min="0" placeholder="4096" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="control-write-text">SPIFFS 写入文本（空则上传文件）</label>
+              <textarea id="control-write-text" rows="3" placeholder="粘贴要写入的文本（UTF-8）"></textarea>
+            </div>
+            <div class="field">
+              <label for="control-file">SPIFFS 上传文件</label>
+              <input id="control-file" type="file" />
+            </div>
+            <div class="field">
+              <label><input type="checkbox" id="control-enabled" /> 滤波启用 / 复用开关</label>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="primary-btn">发送控制命令</button>
+            </div>
+            <p class="form-feedback" id="control-feedback" aria-live="polite"></p>
+          </form>
+        </section>
       </section>
 
       <section class="panel license-panel">
