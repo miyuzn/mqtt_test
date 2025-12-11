@@ -25,17 +25,6 @@ const selectSelection = document.getElementById('select-selection');
 const devicesTableBody = document.getElementById('devices-table-body');
 const historyTableBody = document.getElementById('history-table-body');
 const licenseDefaults = window.licenseDefaults || {};
-const licenseForm = document.getElementById('license-form');
-const licenseDnInput = document.getElementById('license-dn');
-const licenseIpInput = document.getElementById('license-ip');
-const licenseMacInput = document.getElementById('license-mac');
-const licenseTierSelect = document.getElementById('license-tier');
-const licenseDaysInput = document.getElementById('license-days');
-const licensePortInput = document.getElementById('license-port');
-const licenseFeedback = document.getElementById('license-feedback');
-const licenseOutput = document.getElementById('license-output');
-const licenseQueryBtn = document.getElementById('license-query');
-const licenseKeyState = document.getElementById('license-key-state');
 const manualDnInput = document.getElementById('manual-dn');
 const manualIpInput = document.getElementById('manual-ip');
 const dnDatalist = document.getElementById('device-dn-options');
@@ -55,6 +44,11 @@ const controlLimitInput = document.getElementById('control-limit');
 const controlWriteText = document.getElementById('control-write-text');
 const controlFileInput = document.getElementById('control-file');
 const controlEnabledCheckbox = document.getElementById('control-enabled');
+const controlLicenseMacInput = document.getElementById('control-license-mac');
+const controlLicenseDaysInput = document.getElementById('control-license-days');
+const controlLicenseTierSelect = document.getElementById('control-license-tier');
+const controlLicensePortInput = document.getElementById('control-license-port');
+const controlLicenseIpInput = document.getElementById('control-license-ip');
 
 const state = {
   devices: [],
@@ -99,12 +93,6 @@ const setFormFeedback = (message = '', isError = false) => {
   formFeedback.dataset.state = isError ? 'error' : 'info';
 };
 
-const setLicenseFeedback = (message = '', isError = false) => {
-  if (!licenseFeedback) return;
-  licenseFeedback.textContent = message;
-  licenseFeedback.dataset.state = isError ? 'error' : 'info';
-};
-
 const setControlFeedback = (message = '', isError = false) => {
   if (!controlFeedback) return;
   controlFeedback.textContent = message;
@@ -115,22 +103,17 @@ const normalizeMac = (value = '') => (value || '').replace(/[^0-9a-fA-F]/g, '').
 const normalizeDn = (value = '') => (value || '').replace(/[^0-9a-fA-F]/g, '').toUpperCase();
 
 const applyLicenseDefaults = () => {
-  if (licenseDaysInput && licenseDefaults.days) {
-    licenseDaysInput.value = licenseDefaults.days;
+  const defaults = licenseDefaults || {};
+  const portVal = Number(defaults.port || 0);
+  const daysVal = Number(defaults.days || 0);
+  if (controlLicenseDaysInput && daysVal > 0) {
+    controlLicenseDaysInput.value = daysVal;
   }
-  if (licenseTierSelect && licenseDefaults.tier) {
-    licenseTierSelect.value = licenseDefaults.tier;
+  if (controlLicenseTierSelect && defaults.tier) {
+    controlLicenseTierSelect.value = defaults.tier;
   }
-  if (licensePortInput) {
-    const port = Number(licenseDefaults.port || licensePortInput.placeholder || 0);
-    if (port) {
-      licensePortInput.value = port;
-    }
-  }
-  if (licenseKeyState) {
-    const enabled = licenseDefaults.enabled !== false;
-    licenseKeyState.textContent = enabled ? 'License service ready' : 'License service unavailable';
-    licenseKeyState.dataset.state = enabled ? 'ok' : 'off';
+  if (controlLicensePortInput && portVal > 0) {
+    controlLicensePortInput.value = portVal;
   }
 };
 
@@ -140,16 +123,13 @@ function syncLicenseInputsFromDevice() {
   if (!option) return;
   const dn = option.value || '';
   const ip = option.dataset.ip || '';
-  if (licenseDnInput) {
-    licenseDnInput.value = dn;
+  if (controlLicenseMacInput && (!controlLicenseMacInput.value || controlLicenseMacInput.dataset.autoFilled === '1')) {
+    controlLicenseMacInput.value = dn;
+    controlLicenseMacInput.dataset.autoFilled = '1';
   }
-  if (licenseMacInput && (!licenseMacInput.value || licenseMacInput.dataset.autoFilled === '1')) {
-    licenseMacInput.value = dn;
-    licenseMacInput.dataset.autoFilled = '1';
-  }
-  if (licenseIpInput && (!licenseIpInput.value || licenseIpInput.dataset.autoFilled === '1')) {
-    licenseIpInput.value = ip;
-    licenseIpInput.dataset.autoFilled = '1';
+  if (controlLicenseIpInput && (!controlLicenseIpInput.value || controlLicenseIpInput.dataset.autoFilled === '1')) {
+    controlLicenseIpInput.value = ip;
+    controlLicenseIpInput.dataset.autoFilled = '1';
   }
 }
 
@@ -165,6 +145,10 @@ function syncManualInputsFromDevice() {
   if (manualIpInput && (!manualIpInput.value || manualIpInput.dataset.autoFilled === '1')) {
     manualIpInput.value = ip;
     manualIpInput.dataset.autoFilled = '1';
+  }
+  if (controlLicenseIpInput && (!controlLicenseIpInput.value || controlLicenseIpInput.dataset.autoFilled === '1')) {
+    controlLicenseIpInput.value = ip;
+    controlLicenseIpInput.dataset.autoFilled = '1';
   }
 }
 
@@ -363,19 +347,22 @@ function updateDeviceMeta(option) {
   deviceMeta.textContent = ip ? `${ip} | ${heartbeat}` : heartbeat;
 }
 
-async function loadDevices() {
+async function loadDevices(withDiscover = false) {
   const selectedDn = deviceSelect.value || normalizeDn(manualDnInput?.value || '');
-  deviceMeta.textContent = 'Sending broadcast discover...';
-  try {
-    await fetchJSON('/api/discover', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-  } catch (error) {
-    deviceMeta.textContent = `Discover queued failed: ${error.message}`;
+  if (withDiscover) {
+    deviceMeta.textContent = 'Sending broadcast discover...';
+    try {
+      await fetchJSON('/api/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+    } catch (error) {
+      deviceMeta.textContent = `Failed to queue discover: ${error.message}`;
+    }
+  } else {
+    deviceMeta.textContent = 'Loading devices...';
   }
-  deviceMeta.textContent = 'Loading devices...';
   try {
     const data = await fetchJSON('/api/devices');
     state.devices = (data.items || []).map((item) => ({
@@ -407,100 +394,6 @@ async function loadResults() {
     renderHistoryTable();
   } catch (error) {
     setFormFeedback(`Failed to load history: ${error.message}`, true);
-  }
-}
-
-async function handleLicenseSubmit(event) {
-  event.preventDefault();
-  if (!licenseForm) return;
-  if (licenseDefaults && licenseDefaults.enabled === false) {
-    setLicenseFeedback('License 服务未启用。', true);
-    return;
-  }
-  const dn = (licenseDnInput?.value || manualDnInput?.value || deviceSelect.value || '').trim().toUpperCase();
-  const mac = normalizeMac((licenseMacInput?.value || dn || '').trim());
-  const days = Number(licenseDaysInput?.value || licenseDefaults.days || 0);
-  const tier = (licenseTierSelect?.value || licenseDefaults.tier || 'basic').trim().toLowerCase();
-  let targetIp = (licenseIpInput?.value || manualIpInput?.value || '').trim();
-  if (!targetIp && deviceSelect?.selectedOptions?.length) {
-    targetIp = deviceSelect.selectedOptions[0].dataset.ip || '';
-  }
-  const portVal = Number(licensePortInput?.value || licenseDefaults.port || 0);
-
-  if (!mac || mac.length !== 12) {
-    setLicenseFeedback('请输入 12 位设备码（可带冒号）。', true);
-    return;
-  }
-  if (!Number.isInteger(days) || days <= 0) {
-    setLicenseFeedback('有效天数需为正整数。', true);
-    return;
-  }
-  const payload = {
-    device_code: mac,
-    days,
-    tier,
-  };
-  if (dn) payload.dn = dn;
-  if (targetIp) payload.target_ip = targetIp;
-  if (Number.isInteger(portVal) && portVal > 0) payload.port = portVal;
-
-  setLicenseFeedback('正在生成并下发 license...', false);
-  if (licenseOutput) {
-    licenseOutput.textContent = 'processing...';
-  }
-  try {
-    const resp = await fetchJSON('/api/license/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    setLicenseFeedback('命令已发布，等待采集端执行。', false);
-    if (licenseOutput) {
-      licenseOutput.textContent = formatLicenseOutput(resp);
-    }
-  } catch (error) {
-    setLicenseFeedback(`下发失败: ${error.message}`, true);
-    if (licenseOutput) {
-      licenseOutput.textContent = error.message;
-    }
-  }
-}
-
-async function handleLicenseQuery() {
-  if (licenseDefaults && licenseDefaults.enabled === false) {
-    setLicenseFeedback('License 服务未启用。', true);
-    return;
-  }
-  const dn = (licenseDnInput?.value || manualDnInput?.value || deviceSelect.value || '').trim().toUpperCase();
-  let targetIp = (licenseIpInput?.value || manualIpInput?.value || '').trim();
-  if (!targetIp && deviceSelect?.selectedOptions?.length) {
-    targetIp = deviceSelect.selectedOptions[0].dataset.ip || '';
-  }
-  const portVal = Number(licensePortInput?.value || licenseDefaults.port || 0);
-  if (!targetIp) {
-    setLicenseFeedback('请先选择设备或填写目标 IP。', true);
-    return;
-  }
-  const qs = new URLSearchParams();
-  qs.set('target_ip', targetIp);
-  if (dn) qs.set('dn', dn);
-  if (Number.isInteger(portVal) && portVal > 0) qs.set('port', portVal);
-
-  setLicenseFeedback('查询中...', false);
-  if (licenseOutput) {
-    licenseOutput.textContent = 'querying...';
-  }
-  try {
-    const resp = await fetchJSON(`/api/license/query?${qs.toString()}`);
-    setLicenseFeedback('查询命令已发布，等待采集端返回。', false);
-    if (licenseOutput) {
-      licenseOutput.textContent = formatLicenseOutput(resp);
-    }
-  } catch (error) {
-    setLicenseFeedback(`查询失败: ${error.message}`, true);
-    if (licenseOutput) {
-      licenseOutput.textContent = error.message;
-    }
   }
 }
 
@@ -570,6 +463,10 @@ function clearForm() {
     manualIpInput.value = '';
     manualIpInput.dataset.autoFilled = '0';
   }
+  if (controlLicenseIpInput) {
+    controlLicenseIpInput.value = '';
+    controlLicenseIpInput.dataset.autoFilled = '0';
+  }
   if (modelSelect) {
     modelSelect.value = DEFAULT_MODEL;
     updateModelPreview();
@@ -588,6 +485,67 @@ function debounce(fn, wait = 300) {
   };
 }
 
+function updateControlVisibility(action) {
+  const visible = new Set();
+  switch (action) {
+    case 'filter_set':
+      visible.add('control-filter');
+      visible.add('control-port');
+      break;
+    case 'calib_collect':
+      visible.add('control-calib');
+      visible.add('control-level');
+      visible.add('control-port');
+      break;
+    case 'calib_level_query':
+    case 'calib_level_delete':
+      visible.add('control-level');
+      visible.add('control-port');
+      break;
+    case 'spiffs_read':
+      visible.add('control-path');
+      visible.add('control-limit');
+      visible.add('control-port');
+      break;
+    case 'spiffs_write':
+      visible.add('control-path');
+      visible.add('control-write');
+      visible.add('control-port');
+      break;
+    case 'spiffs_delete':
+      visible.add('control-path');
+      visible.add('control-port');
+      break;
+    case 'spiffs_list':
+      visible.add('control-port');
+      break;
+    case 'license_apply':
+      visible.add('control-license-mac');
+      visible.add('control-license-apply');
+      visible.add('control-license-port');
+      visible.add('control-license-ip');
+      break;
+    case 'license_query':
+      visible.add('control-license-mac');
+      visible.add('control-license-port');
+      visible.add('control-license-ip');
+      break;
+    case 'filter_query':
+    case 'standby_enable':
+    case 'standby_disable':
+    case 'calib_enable':
+    case 'calib_disable':
+    case 'calib_status':
+    default:
+      break;
+  }
+  document.querySelectorAll('.control-field').forEach((field) => {
+    const fieldClasses = Array.from(field.classList).filter((cls) => cls.startsWith('control-'));
+    const shouldShow = fieldClasses.some((cls) => visible.has(cls));
+    field.classList.toggle('hidden', !shouldShow);
+  });
+}
+
 function init() {
   applyLicenseDefaults();
   renderPinButtons('analog-grid', ANALOG_PRESETS, 'analog-input');
@@ -599,18 +557,18 @@ function init() {
     modelSelect.addEventListener('change', updateModelPreview);
     updateModelPreview();
   }
-  refreshDevicesBtn.addEventListener('click', () => loadDevices());
+  refreshDevicesBtn.addEventListener('click', () => loadDevices(true));
   refreshResultsBtn.addEventListener('click', () => loadResults());
   form.addEventListener('submit', handleSubmit);
   clearBtn.addEventListener('click', clearForm);
-  if (licenseMacInput) {
-    licenseMacInput.addEventListener('input', () => {
-      licenseMacInput.dataset.autoFilled = '0';
+  if (controlLicenseMacInput) {
+    controlLicenseMacInput.addEventListener('input', () => {
+      controlLicenseMacInput.dataset.autoFilled = '0';
     });
   }
-  if (licenseIpInput) {
-    licenseIpInput.addEventListener('input', () => {
-      licenseIpInput.dataset.autoFilled = '0';
+  if (controlLicenseIpInput) {
+    controlLicenseIpInput.addEventListener('input', () => {
+      controlLicenseIpInput.dataset.autoFilled = '0';
     });
   }
   if (manualDnInput) {
@@ -623,22 +581,12 @@ function init() {
       manualIpInput.dataset.autoFilled = '0';
     });
   }
-  if (licenseForm) {
-    licenseForm.addEventListener('submit', handleLicenseSubmit);
-  }
-  if (licenseQueryBtn) {
-    licenseQueryBtn.addEventListener('click', handleLicenseQuery);
-  }
   if (controlForm) {
     controlForm.addEventListener('submit', handleControlSubmit);
+    controlAction.addEventListener('change', () => updateControlVisibility(controlAction.value));
+    updateControlVisibility(controlAction.value);
   }
-  if (licenseForm && licenseDefaults && licenseDefaults.enabled === false) {
-    Array.from(licenseForm.elements).forEach((el) => {
-      if (el.id !== 'license-output') el.disabled = true;
-    });
-    setLicenseFeedback('License 服务未启用。', true);
-  }
-  loadDevices();
+  loadDevices(false);
   loadResults();
   setInterval(loadResults, 8000);
 }
@@ -665,12 +613,12 @@ async function handleControlSubmit(event) {
   event.preventDefault();
   const dn = normalizeDn((manualDnInput?.value || deviceSelect.value || '').trim());
   if (!dn) {
-    setControlFeedback('请先选择设备或输入 DN/MAC。', true);
+    setControlFeedback('Please select a device or enter DN/MAC first.', true);
     return;
   }
   const action = controlAction?.value || '';
   if (!action) {
-    setControlFeedback('请选择命令。', true);
+    setControlFeedback('Please choose a command.', true);
     return;
   }
   const targetIp = (manualIpInput?.value || deviceSelect.selectedOptions?.[0]?.dataset.ip || '').trim();
@@ -689,6 +637,11 @@ async function handleControlSubmit(event) {
   const enabledChecked = controlEnabledCheckbox?.checked;
   const writeText = controlWriteText?.value || '';
   const fileObj = controlFileInput?.files?.[0];
+  const licenseMacVal = normalizeMac((controlLicenseMacInput?.value || dn || '').trim());
+  const licenseDaysVal = getNumeric(controlLicenseDaysInput) || Number(licenseDefaults.days || 0) || undefined;
+  const licenseTierVal = (controlLicenseTierSelect?.value || licenseDefaults.tier || 'basic').trim().toLowerCase();
+  const licensePortVal = getNumeric(controlLicensePortInput) || Number(licenseDefaults.port || 0) || undefined;
+  let licenseTargetIp = (controlLicenseIpInput?.value || targetIp || '').trim();
 
   switch (action) {
     case 'standby_enable':
@@ -719,7 +672,7 @@ async function handleControlSubmit(event) {
       break;
     case 'calib_collect':
       if (analogpinVal === undefined || selectpinVal === undefined || !levelVal) {
-        setControlFeedback('AnalogPin / SelectPin / level 不能为空。', true);
+        setControlFeedback('AnalogPin / SelectPin / level are required.', true);
         return;
       }
       payload = {
@@ -735,14 +688,14 @@ async function handleControlSubmit(event) {
       break;
     case 'calib_level_query':
       if (!levelVal) {
-        setControlFeedback('请输入 level。', true);
+        setControlFeedback('Please provide level.', true);
         return;
       }
       payload = { calibration: { command: 'level', level: levelVal } };
       break;
     case 'calib_level_delete':
       if (!levelVal) {
-        setControlFeedback('请输入 level。', true);
+        setControlFeedback('Please provide level.', true);
         return;
       }
       payload = { calibration: { command: 'delete', level: levelVal } };
@@ -752,7 +705,7 @@ async function handleControlSubmit(event) {
       break;
     case 'spiffs_read':
       if (!pathVal) {
-        setControlFeedback('请输入路径。', true);
+        setControlFeedback('Please provide a path.', true);
         return;
       }
       payload = { spiffs: { command: 'read', path: pathVal } };
@@ -760,14 +713,14 @@ async function handleControlSubmit(event) {
       break;
     case 'spiffs_delete':
       if (!pathVal) {
-        setControlFeedback('请输入路径。', true);
+        setControlFeedback('Please provide a path.', true);
         return;
       }
       payload = { spiffs: { command: 'delete', path: pathVal } };
       break;
     case 'spiffs_write': {
       if (!pathVal) {
-        setControlFeedback('请输入路径。', true);
+        setControlFeedback('Please provide a path.', true);
         return;
       }
       let dataB64 = '';
@@ -775,20 +728,74 @@ async function handleControlSubmit(event) {
         try {
           dataB64 = await readFileAsBase64(fileObj);
         } catch (err) {
-          setControlFeedback(`读取文件失败: ${err}`, true);
+          setControlFeedback(`Failed to read file: ${err}`, true);
           return;
         }
       } else if (writeText) {
         dataB64 = btoa(unescape(encodeURIComponent(writeText)));
       } else {
-        setControlFeedback('请上传文件或填写写入文本。', true);
+        setControlFeedback('Upload a file or provide text to write.', true);
         return;
       }
       payload = { spiffs: { command: 'write', path: pathVal, data_base64: dataB64 } };
       break;
     }
+    case 'license_apply': {
+      if (!licenseMacVal || licenseMacVal.length !== 12) {
+        setControlFeedback('Device code (MAC) must be 12 hex characters.', true);
+        return;
+      }
+      if (!licenseDaysVal || licenseDaysVal <= 0) {
+        setControlFeedback('License days must be a positive integer.', true);
+        return;
+      }
+      const body = {
+        dn,
+        device_code: licenseMacVal,
+        days: Math.floor(licenseDaysVal),
+        tier: licenseTierVal || 'basic',
+      };
+      if (licenseTargetIp) body.target_ip = licenseTargetIp;
+      if (licensePortVal && licensePortVal > 0) body.port = Math.floor(licensePortVal);
+      setControlFeedback('Sending license apply...', false);
+      try {
+        const resp = await fetchJSON('/api/license/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        setControlFeedback(`License command ${resp.command_id || ''} queued.`, false);
+        loadResults();
+      } catch (error) {
+        setControlFeedback(`License apply failed: ${error.message}`, true);
+      }
+      return;
+    }
+    case 'license_query': {
+      if (!licenseMacVal || licenseMacVal.length !== 12) {
+        setControlFeedback('Device code (MAC) must be 12 hex characters.', true);
+        return;
+      }
+      if (!licenseTargetIp) {
+        setControlFeedback('Target IP is required for license query.', true);
+        return;
+      }
+      const qs = new URLSearchParams();
+      qs.set('dn', dn);
+      qs.set('target_ip', licenseTargetIp);
+      if (licensePortVal && licensePortVal > 0) qs.set('port', Math.floor(licensePortVal));
+      setControlFeedback('Sending license query...', false);
+      try {
+        const resp = await fetchJSON(`/api/license/query?${qs.toString()}`);
+        setControlFeedback(`License query ${resp.command_id || ''} queued.`, false);
+        loadResults();
+      } catch (error) {
+        setControlFeedback(`License query failed: ${error.message}`, true);
+      }
+      return;
+    }
     default:
-      setControlFeedback('未支持的命令。', true);
+      setControlFeedback('Unsupported action.', true);
       return;
   }
 
@@ -802,16 +809,16 @@ async function handleControlSubmit(event) {
   };
   if (targetIp) body.target_ip = targetIp;
 
-  setControlFeedback('发送中...', false);
+  setControlFeedback('Sending...', false);
   try {
     const resp = await fetchJSON('/api/config/control', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    setControlFeedback(`命令 ${resp.command_id || ''} 已下发。`, false);
+    setControlFeedback(`Command ${resp.command_id || ''} queued.`, false);
     loadResults();
   } catch (error) {
-    setControlFeedback(`发送失败: ${error.message}`, true);
+    setControlFeedback(`Send failed: ${error.message}`, true);
   }
 }

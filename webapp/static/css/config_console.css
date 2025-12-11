@@ -307,6 +307,10 @@ code {
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 }
 
+.hidden {
+  display: none !important;
+}
+
 @media (max-width: 960px) {
   .app-main {
     grid-template-columns: 1fr;

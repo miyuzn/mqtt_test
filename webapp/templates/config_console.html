@@ -9,8 +9,8 @@
   <body>
     <header class="app-header">
       <div>
-        <h1>ESP32 Configuration Console</h1>
-        <p>Send analog and select commands to online devices through MQTT.</p>
+        <h1>Device Configuration Console</h1>
+        <p>Discover devices and send control/config commands via MQTT.</p>
       </div>
       <div class="header-actions">
         <button id="refresh-devices" class="ghost-btn" type="button">Refresh Devices</button>
@@ -31,7 +31,7 @@
       <section class="panel form-panel">
         <form id="config-form">
           <div class="field">
-            <label for="device-select">Select an online device</label>
+            <label for="device-select">Online devices</label>
             <div class="device-picker">
               <select id="device-select"></select>
               <span class="device-meta" id="device-meta">No device selected</span>
@@ -40,18 +40,18 @@
 
           <div class="field-group">
             <div class="field">
-              <label for="manual-dn">Device DN / MAC (manual input supported)</label>
-              <input id="manual-dn" placeholder="Auto-fill from discovery or type 12-digit MAC" list="device-dn-options" autocomplete="off" />
+              <label for="manual-dn">Device DN / MAC</label>
+              <input id="manual-dn" placeholder="Auto-fill or type 12-digit MAC" list="device-dn-options" autocomplete="off" />
               <datalist id="device-dn-options"></datalist>
             </div>
             <div class="field">
-              <label for="manual-ip">Target IP (discovered or manual)</label>
-              <input id="manual-ip" placeholder="Auto-sync discovered IP, can be overridden" autocomplete="off" />
+              <label for="manual-ip">Target IP (optional)</label>
+              <input id="manual-ip" placeholder="Auto-sync discovered IP, override allowed" autocomplete="off" />
             </div>
           </div>
 
           <div class="field">
-            <label for="model-select">Select PCB model</label>
+            <label for="model-select">PCB model</label>
             <select id="model-select">
               <option value="v2.2.c">v2.2.c</option>
               <option value="v2.1">v2.1</option>
@@ -86,153 +86,131 @@
         <section class="panel control-panel">
           <header class="panel-block-header">
             <div>
-              <h3>设备控制 / 维护命令</h3>
-              <p>透传 standby / filter / calibration / SPIFFS 等 JSON 指令到设备</p>
+              <h3>Device control / maintenance</h3>
+              <p>Send standby / filter / calibration / SPIFFS / license commands via MQTT</p>
             </div>
           </header>
           <form id="control-form">
             <div class="field">
-              <label for="control-action">选择命令</label>
+              <label for="control-action">Select action</label>
               <select id="control-action">
-                <option value="standby_enable">进入待机模式</option>
-                <option value="standby_disable">退出待机模式</option>
-                <option value="filter_query">查询滤波配置</option>
-                <option value="filter_set">设置滤波配置</option>
-                <option value="calib_enable">校准启用</option>
-                <option value="calib_disable">校准禁用</option>
-                <option value="calib_status">查询校准状态</option>
-                <option value="calib_collect">校准采集</option>
-                <option value="calib_level_query">查询某标定 level</option>
-                <option value="calib_level_delete">删除某标定 level</option>
-                <option value="spiffs_list">SPIFFS 列表</option>
-                <option value="spiffs_read">SPIFFS 读取</option>
-                <option value="spiffs_write">SPIFFS 写入</option>
-                <option value="spiffs_delete">SPIFFS 删除</option>
+                <option value="standby_enable">Enter standby</option>
+                <option value="standby_disable">Exit standby</option>
+                <option value="filter_query">Query filter</option>
+                <option value="filter_set">Set filter</option>
+                <option value="calib_enable">Calibration enable</option>
+                <option value="calib_disable">Calibration disable</option>
+                <option value="calib_status">Query calibration status</option>
+                <option value="calib_collect">Calibration collect</option>
+                <option value="calib_level_query">Query level</option>
+                <option value="calib_level_delete">Delete level</option>
+                <option value="spiffs_list">SPIFFS list</option>
+                <option value="spiffs_read">SPIFFS read</option>
+                <option value="spiffs_write">SPIFFS write</option>
+                <option value="spiffs_delete">SPIFFS delete</option>
+                <option value="license_apply">License apply</option>
+                <option value="license_query">License query</option>
               </select>
             </div>
             <div class="field-group">
-              <div class="field">
-                <label for="control-port">TCP 端口（可空）</label>
+              <div class="field control-field control-port">
+                <label for="control-port">TCP port (optional)</label>
                 <input id="control-port" type="number" min="1" max="65535" placeholder="22345" />
               </div>
-              <div class="field">
-                <label for="control-level">标定 level / 路径等可复用字段</label>
-                <input id="control-level" placeholder="例如 0.5 或 /path" />
+              <div class="field control-field control-level">
+                <label for="control-level">Level / path (multi-use)</label>
+                <input id="control-level" placeholder="e.g. 0.5 or /path" />
               </div>
             </div>
             <div class="field-group">
-              <div class="field">
-                <label for="control-alpha">滤波 alpha</label>
+              <div class="field control-field control-filter">
+                <label for="control-alpha">Filter alpha</label>
                 <input id="control-alpha" type="number" step="0.01" min="0" max="1" placeholder="0.3" />
               </div>
-              <div class="field">
-                <label for="control-median">滤波中值窗 (1/3/5)</label>
+              <div class="field control-field control-filter">
+                <label for="control-median">Median window (1/3/5)</label>
                 <input id="control-median" type="number" min="1" max="9" step="1" placeholder="3" />
               </div>
             </div>
             <div class="field-group">
-              <div class="field">
+              <div class="field control-field control-calib">
                 <label for="control-analogpin">AnalogPin</label>
                 <input id="control-analogpin" type="number" min="0" />
               </div>
-              <div class="field">
+              <div class="field control-field control-calib">
                 <label for="control-selectpin">SelectPin</label>
                 <input id="control-selectpin" type="number" min="0" />
               </div>
             </div>
             <div class="field-group">
-              <div class="field">
-                <label for="control-start-time">开始前等待 (ms)</label>
+              <div class="field control-field control-calib">
+                <label for="control-start-time">Start delay (ms)</label>
                 <input id="control-start-time" type="number" min="0" placeholder="1000" />
               </div>
-              <div class="field">
-                <label for="control-calib-time">采集时长 (ms)</label>
+              <div class="field control-field control-calib">
+                <label for="control-calib-time">Collect duration (ms)</label>
                 <input id="control-calib-time" type="number" min="0" placeholder="5000" />
               </div>
             </div>
             <div class="field-group">
-              <div class="field">
-                <label for="control-path">SPIFFS 路径</label>
-                <input id="control-path" placeholder="/calib_0.00.csv 或 /" />
+              <div class="field control-field control-path">
+                <label for="control-path">SPIFFS path</label>
+                <input id="control-path" placeholder="/calib_0.00.csv or /" />
               </div>
-              <div class="field">
-                <label for="control-limit">读取限制字节 (可空)</label>
+              <div class="field control-field control-limit">
+                <label for="control-limit">Read limit bytes (optional)</label>
                 <input id="control-limit" type="number" min="0" placeholder="4096" />
               </div>
             </div>
-            <div class="field">
-              <label for="control-write-text">SPIFFS 写入文本（空则上传文件）</label>
-              <textarea id="control-write-text" rows="3" placeholder="粘贴要写入的文本（UTF-8）"></textarea>
+            <div class="field control-field control-write">
+              <label for="control-write-text">SPIFFS write text (or upload file)</label>
+              <textarea id="control-write-text" rows="3" placeholder="Paste text to write (UTF-8)"></textarea>
             </div>
-            <div class="field">
-              <label for="control-file">SPIFFS 上传文件</label>
+            <div class="field control-field control-write">
+              <label for="control-file">SPIFFS upload file</label>
               <input id="control-file" type="file" />
             </div>
-            <div class="field">
-              <label><input type="checkbox" id="control-enabled" /> 滤波启用 / 复用开关</label>
+            <div class="field control-field control-filter">
+              <label><input type="checkbox" id="control-enabled" /> Filter enabled</label>
+            </div>
+            <div class="field-group">
+              <div class="field control-field control-license control-license-mac">
+                <label for="control-license-mac">Device code (MAC, 12 HEX)</label>
+                <input id="control-license-mac" placeholder="E00AD6773866 or 00:11:22:33:44:55" autocomplete="off" />
+              </div>
+              <div class="field control-field control-license control-license-days control-license-apply">
+                <label for="control-license-days">License days</label>
+                <input id="control-license-days" type="number" min="1" step="1" placeholder="365" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field control-field control-license control-license-tier control-license-apply">
+                <label for="control-license-tier">License tier</label>
+                <select id="control-license-tier">
+                  <option value="basic">basic</option>
+                  <option value="advanced">advanced</option>
+                  <option value="pro">pro</option>
+                </select>
+              </div>
+              <div class="field control-field control-license control-license-port">
+                <label for="control-license-port">License TCP port</label>
+                <input id="control-license-port" type="number" min="1" max="65535" placeholder="22345" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field control-field control-license control-license-ip">
+                <label for="control-license-ip">License target IP (optional)</label>
+                <input id="control-license-ip" placeholder="Auto-sync device IP, can override" autocomplete="off" />
+              </div>
             </div>
             <div class="form-actions">
-              <button type="submit" class="primary-btn">发送控制命令</button>
+              <button type="submit" class="primary-btn">Send control command</button>
             </div>
             <p class="form-feedback" id="control-feedback" aria-live="polite"></p>
           </form>
         </section>
       </section>
 
-      <section class="panel license-panel">
-        <header class="panel-block-header">
-          <div>
-            <h3>License 配置下发</h3>
-            <p>生成 Base32 license 并通过 TCP 推送到设备，自动同步上方设备选择。</p>
-          </div>
-          <div class="badge" id="license-key-state">License service</div>
-        </header>
-        <form id="license-form">
-          <div class="field-group">
-            <div class="field">
-              <label for="license-dn">目标 DN / 设备码</label>
-              <input id="license-dn" placeholder="自动同步在线设备" autocomplete="off" />
-            </div>
-            <div class="field">
-              <label for="license-ip">目标 IP</label>
-              <input id="license-ip" placeholder="自动同步设备 IP，亦可手填" autocomplete="off" />
-            </div>
-          </div>
-
-          <div class="field-group">
-            <div class="field">
-              <label for="license-mac">设备码（12 位 HEX，可含冒号）</label>
-              <input id="license-mac" placeholder="E00AD6773866 或 00:11:22:33:44:55" autocomplete="off" />
-            </div>
-            <div class="field">
-              <label for="license-days">有效天数</label>
-              <input id="license-days" type="number" min="1" step="1" placeholder="365" />
-            </div>
-          </div>
-
-          <div class="field-group">
-            <div class="field">
-              <label for="license-tier">License 类型</label>
-              <select id="license-tier">
-                <option value="basic">basic</option>
-                <option value="advanced">advanced</option>
-                <option value="pro">pro</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="license-port">TCP 端口</label>
-              <input id="license-port" type="number" min="1" max="65535" placeholder="22345" />
-            </div>
-          </div>
-
-          <div class="license-actions">
-            <button type="button" id="license-query" class="ghost-btn">查询设备 License</button>
-            <button type="submit" class="primary-btn">生成并下发 License</button>
-          </div>
-          <p class="form-feedback" id="license-feedback" aria-live="polite"></p>
-          <pre id="license-output" class="license-output" aria-live="polite">尚未发送请求</pre>
-        </form>
-      </section>
     </main>
 
     <section class="panel data-panel">
@@ -249,7 +227,7 @@
               <tr>
                 <th>DN</th>
                 <th>IP</th>
-                <th>Last Heartbeat</th>
+                <th>Last heartbeat</th>
               </tr>
             </thead>
             <tbody id="devices-table-body">
