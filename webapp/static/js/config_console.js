@@ -586,7 +586,7 @@ function init() {
     controlAction.addEventListener('change', () => updateControlVisibility(controlAction.value));
     updateControlVisibility(controlAction.value);
   }
-  loadDevices(false);
+  loadDevices(true);
   loadResults();
   setInterval(loadResults, 8000);
 }
