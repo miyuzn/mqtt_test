@@ -1,7 +1,7 @@
 services:
-  pyclient:
+  sink:
     build: ./app
-    container_name: mqtt-pyclient
+    container_name: mqtt-sink
     environment:
       BROKER_HOST: ${TRANSFER_MQTT_HOST:-163.143.136.106}
       BROKER_PORT: ${TRANSFER_MQTT_PORT:-1883}

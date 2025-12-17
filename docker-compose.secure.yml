@@ -33,9 +33,9 @@ services:
     command: ["python", "/server/raw_parser_service.py"]
     restart: unless-stopped
 
-  pyclient:
+  sink:
     build: ./app
-    container_name: mqtt-pyclient
+    container_name: mqtt-sink
     depends_on:
       - mosquitto
     environment:
@@ -87,7 +87,7 @@ services:
       - ./license:/license
       - ./certs:/certs:ro
     ports:
-      - "443:5000"   # HTTPS only (self-signed for local test)
+      - "127.0.0.1:8443:5000"   # Loopback HTTPS; use Windows portproxy to expose :443
     restart: unless-stopped
 
   mqttcli:
