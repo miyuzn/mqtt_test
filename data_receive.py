@@ -8,6 +8,7 @@ import sys
 import configparser
 import socket
 import signal
+import ssl
 import threading
 import queue
 import time
@@ -76,6 +77,13 @@ TOPIC_PARSED_PR = get_conf("MQTT", "TOPIC_PARSED_PREFIX", "etx/v1/parsed")
 PUBLISH_RAW     = get_conf("MQTT", "PUBLISH_RAW", 1, int) == 1
 PUBLISH_PARSED  = get_conf("MQTT", "PUBLISH_PARSED", 0, int) == 1
 MQTT_QOS        = get_conf("MQTT", "MQTT_QOS", 1, int)
+MQTT_USERNAME   = get_conf("MQTT", "USERNAME", "", str)
+MQTT_PASSWORD   = get_conf("MQTT", "PASSWORD", "", str)
+MQTT_TLS_ENABLED = get_conf("MQTT", "TLS_ENABLED", 0, int) == 1
+MQTT_CA_CERT     = get_conf("MQTT", "CA_CERT", "", str)
+MQTT_CLIENT_CERT = get_conf("MQTT", "CLIENT_CERT", "", str)
+MQTT_CLIENT_KEY  = get_conf("MQTT", "CLIENT_KEY", "", str)
+MQTT_TLS_INSECURE = get_conf("MQTT", "TLS_INSECURE", 0, int) == 1
 
 # QUEUE
 Q_MAXSIZE       = get_conf("QUEUE", "BRIDGE_QUEUE_SIZE", 2000, int)
@@ -890,6 +898,23 @@ def mqtt_worker():
     client = mqtt.Client(client_id=CLIENT_ID, clean_session=True)
     client.on_message = handle_config_command
     client.on_connect = on_config_connect
+
+    if MQTT_USERNAME:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD or None)
+
+    if MQTT_TLS_ENABLED:
+        tls_version = getattr(ssl, "PROTOCOL_TLS_CLIENT", ssl.PROTOCOL_TLSv1_2)
+        ca = MQTT_CA_CERT or None
+        cert = MQTT_CLIENT_CERT or None
+        key = MQTT_CLIENT_KEY or None
+        client.tls_set(
+            ca_certs=ca,
+            certfile=cert,
+            keyfile=key,
+            tls_version=tls_version,
+        )
+        client.tls_insecure_set(MQTT_TLS_INSECURE)
+
     client.connect(BROKER_HOST, BROKER_PORT, keepalive=30)
     client.loop_start()
 

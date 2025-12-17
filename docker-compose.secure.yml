@@ -1,0 +1,100 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "8883:8883"   # Secure MQTT (TLS)
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+      - ./certs:/mosquitto/certs:ro
+    command: ["mosquitto", "-c", "/mosquitto/config/mosquitto.secure.conf"]
+
+  parser:
+    build: ./app
+    container_name: mqtt-parser
+    depends_on:
+      - mosquitto
+    environment:
+      - RAW_BROKER_HOST=mosquitto
+      - RAW_BROKER_PORT=1883
+      - RAW_TOPIC=etx/v1/raw/#
+      - RAW_QOS=1
+      - PARSED_BROKER_HOST=mosquitto
+      - PARSED_BROKER_PORT=1883
+      - PARSED_TRANSPORT=tcp
+      - PARSED_TOPIC_PREFIX=etx/v1/parsed
+      - PARSED_QOS=1
+    volumes:
+      - ./app:/app
+      - ./server:/server
+    command: ["python", "/server/raw_parser_service.py"]
+    restart: unless-stopped
+
+  pyclient:
+    build: ./app
+    container_name: mqtt-pyclient
+    depends_on:
+      - mosquitto
+    environment:
+      - BROKER_HOST=mosquitto
+      - BROKER_PORT=1883
+      - SUB_TOPICS=etx/v1/parsed/#,demo/#,secure/#
+      - PUB_TOPIC=demo/hello
+      - USERNAME=
+      - PASSWORD=
+    volumes:
+      - ./app:/app
+    command: ["python", "sink.py"]
+    restart: unless-stopped
+
+  bridge:
+    build: ./app
+    container_name: mqtt-bridge
+    depends_on:
+      - mosquitto
+    environment:
+      - BROKER_HOST=mosquitto
+      - BROKER_PORT=1883
+      - MQTT_SUB_TOPIC=etx/v1/parsed/#
+      - MQTT_QOS=1
+      - CLIENT_ID=mqtt-bridge
+      - BRIDGE_PORT=5001
+    volumes:
+      - ./app:/app
+      - ./server:/server
+    command: ["python", "/server/bridge.py"]
+    restart: unless-stopped
+
+  web:
+    build: ./webapp
+    container_name: mqtt-web
+    depends_on:
+      - bridge
+    environment:
+      - BRIDGE_API_BASE_URL=http://bridge:5001
+      - BRIDGE_CONNECT_TIMEOUT=5
+      - BRIDGE_READ_TIMEOUT=30
+      - WEB_SSL_ENABLED=1
+      - WEB_SSL_CERT=/certs/web.crt
+      - WEB_SSL_KEY=/certs/web.key
+      # 如不需要配置控制台，可在安全部署时禁用：
+      # - CONFIG_CONSOLE_ENABLED=0
+    volumes:
+      - ./webapp:/app
+      - ./license:/license
+      - ./certs:/certs:ro
+    ports:
+      - "443:5000"   # HTTPS only (self-signed for local test)
+    restart: unless-stopped
+
+  mqttcli:
+    image: efrecon/mqtt-client
+    container_name: mqtt-cli
+    depends_on:
+      - mosquitto
+    volumes:
+      - ./certs:/certs:ro
+    command: ["sh", "-c", "sleep infinity"]

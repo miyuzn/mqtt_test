@@ -16,3 +16,9 @@ devmin/data/
 # license
 license/licenses_history.json
 license/priv.pem
+
+# TLS (dev/self-signed)
+certs/*.crt
+certs/*.key
+certs/*.pem
+mosquitto/config/passwordfile

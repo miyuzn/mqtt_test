@@ -543,4 +543,16 @@ if __name__ == "__main__":
     # 本地启动时启用多线程，防止单线程阻塞 SSE。
     if CONFIG_CONSOLE_ENABLED:
         threading.Thread(target=_run_config_console, name="config-console", daemon=True).start()
-    app.run(host="0.0.0.0", port=5000, threaded=True, use_reloader=False)
+
+    web_port = int(os.getenv("WEB_PORT", "5000"))
+    ssl_enabled = os.getenv("WEB_SSL_ENABLED", "0") not in ("0", "", "false", "False", "FALSE")
+    ssl_cert = os.getenv("WEB_SSL_CERT")
+    ssl_key = os.getenv("WEB_SSL_KEY")
+    ssl_context = None
+    if ssl_enabled:
+        if ssl_cert and ssl_key:
+            ssl_context = (ssl_cert, ssl_key)
+        else:
+            print("[web] WEB_SSL_ENABLED is set but WEB_SSL_CERT/WEB_SSL_KEY missing; falling back to HTTP.")
+
+    app.run(host="0.0.0.0", port=web_port, threaded=True, use_reloader=False, ssl_context=ssl_context)
