@@ -1023,6 +1023,19 @@ def stats_printer():
 
 def main():
     install_signals()
+    if BROKER_PORT == 8883 and not MQTT_TLS_ENABLED:
+        print(
+            "[BRIDGE/MQTT] ERROR: BROKER_PORT=8883 requires TLS. "
+            "Set [MQTT] TLS_ENABLED=1 (and CA_CERT) in your config.ini.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    if MQTT_TLS_ENABLED and not MQTT_TLS_INSECURE and not MQTT_CA_CERT:
+        print(
+            "[BRIDGE/MQTT] WARNING: TLS_ENABLED=1 but CA_CERT is empty; "
+            "certificate verification may fail unless the CA is already trusted.",
+            file=sys.stderr,
+        )
     gcu_manager.start()
     # Spin up UDP/MQTT/stats threads and keep looping until interrupted.
     # Start UDP, MQTT, and stats threads until interrupted / 启动 UDP、MQTT、统计线程并持续运行直到被中断。
