@@ -3,9 +3,9 @@ param(
     [int]$ValidDays = 825,
     [string]$CaCommonName = "mqtt_test-dev-ca",
     [string[]]$MosquittoDnsNames = @("mosquitto", "localhost"),
-    [string[]]$MosquittoIpAddresses = @("163.143.136.106"),
+    [string[]]$MosquittoIpAddresses = @("163.143.136.103"),
     [string[]]$WebDnsNames = @("localhost"),
-    [string[]]$WebIpAddresses = @("163.143.136.106"),
+    [string[]]$WebIpAddresses = @("163.143.136.103"),
     [switch]$Force
 )
 

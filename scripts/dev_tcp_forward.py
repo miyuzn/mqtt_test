@@ -7,7 +7,7 @@ Why this exists:
 - This script forwards TCP :443 -> :8443 (or any other target) without needing admin.
 
 Usage (PowerShell):
-  py scripts\\dev_tcp_forward.py --listen-host 163.143.136.106 --listen-port 443 --target-host 127.0.0.1 --target-port 8443
+  py scripts\\dev_tcp_forward.py --listen-host 163.143.136.103 --listen-port 443 --target-host 127.0.0.1 --target-port 8443
 """
 
 from __future__ import annotations
@@ -111,4 +111,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

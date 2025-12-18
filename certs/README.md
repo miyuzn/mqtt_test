@@ -15,7 +15,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev_generate_certs
 - `certs/mosquitto.crt`、`certs/mosquitto.key`：MQTTS(8883) 服务端证书
 - `certs/web.crt`、`certs/web.key`：HTTPS(443) 服务端证书
 
-默认 SAN 已包含内网调试地址 `163.143.136.106`（如需替换为其它 IP，可在脚本参数 `-MosquittoIpAddresses/-WebIpAddresses` 指定）。
+默认 SAN 已包含内网调试地址 `163.143.136.103`（如需替换为其它 IP，可在脚本参数 `-MosquittoIpAddresses/-WebIpAddresses` 指定）。
 
 ## 信任（可选）
 
@@ -24,10 +24,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev_generate_certs
 Windows 下 `curl.exe` 可能会因为证书吊销检查返回 `CERT_TRUST_REVOCATION_STATUS_UNKNOWN`，可改用：
 
 ```powershell
-curl.exe --ssl-no-revoke --cacert certs\ca.crt https://163.143.136.106/healthz
+curl.exe --ssl-no-revoke --cacert certs\ca.crt https://163.143.136.103/healthz
 ```
 
 若仍提示证书不受信任（Windows `curl.exe` 默认使用 Schannel，可能不会按预期使用 `--cacert`），建议二选一：
 
-1) 将 `certs/ca.crt` 导入 “受信任的根证书颁发机构”，再访问 `https://163.143.136.106/`
-2) 仅联调临时跳过校验：`curl.exe -k https://163.143.136.106/healthz`
+1) 将 `certs/ca.crt` 导入 “受信任的根证书颁发机构”，再访问 `https://163.143.136.103/`
+2) 仅联调临时跳过校验：`curl.exe -k https://163.143.136.103/healthz`
