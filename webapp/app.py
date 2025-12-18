@@ -182,11 +182,59 @@ def _extract_direct_payload(data: dict):
     }
 
 
+def _timestamp_to_epoch(value) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        ts = float(value)
+        if ts > 1e12:  # epoch milliseconds
+            ts /= 1000.0
+        return ts
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0.0
+        try:
+            num = float(text)
+        except Exception:
+            num = None
+        if num is not None:
+            if num > 1e12:
+                num /= 1000.0
+            return float(num)
+        try:
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            return datetime.fromisoformat(text).timestamp()
+        except Exception:
+            return 0.0
+    return 0.0
+
+
+def _coerce_timestamp_iso(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    ts = _timestamp_to_epoch(value)
+    if ts <= 0:
+        return None
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+
+
 def _merge_results() -> list[dict]:
-    items: list[dict] = list(_direct_results)
+    items: list[dict] = []
+    items.extend([dict(item) for item in _direct_results if isinstance(item, dict)])
     if config_service:
-        items.extend(config_service.list_results())
-    items.sort(key=lambda item: item.get("timestamp") or "", reverse=True)
+        items.extend([dict(item) for item in config_service.list_results() if isinstance(item, dict)])
+    for item in items:
+        if "timestamp" in item:
+            item["timestamp"] = _coerce_timestamp_iso(item.get("timestamp")) or item.get("timestamp")
+        else:
+            ts = item.get("ts") or item.get("time")
+            if ts is not None:
+                item["timestamp"] = _coerce_timestamp_iso(ts) or ts
+    items.sort(key=lambda item: _timestamp_to_epoch(item.get("timestamp")), reverse=True)
     return items[:50]
 
 
@@ -321,7 +369,10 @@ def config_discover() -> Response:
 
 @config_app.route("/api/commands/latest")
 def config_results() -> Response:
-    items = _merge_results()
+    try:
+        items = _merge_results()
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": "results_failed", "detail": str(exc)}), 500
     return jsonify({"items": items})
 
 
