@@ -103,6 +103,21 @@ code {
 
 .heatmap-wrapper {
   min-height: 260px;
+  height: 360px;
+  position: relative;
+}
+
+.heatmap-wrapper.has-3d {
+  background-color: #0d1117;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.pressure-surface-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
 }
 
 .language-switcher .btn {

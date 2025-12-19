@@ -5,11 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>リアルタイム圧力モニター</title>
 
-    <!-- 去掉 integrity / crossorigin -->
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
-    />
+    <!-- Bootstrap (local) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" />
 
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
@@ -259,6 +256,16 @@
     </div>
     <!-- Front-end logic: state management, i18n, SSE subscriptions -->
     <!-- 前端逻辑：状态管理、多语言与 SSE 订阅 -->
+    <!-- Three.js: 3D pressure surface rendering (local, ESM) -->
+    <script type="module">
+      import * as THREE from "{{ url_for('static', filename='vendor/three/three.module.js') }}";
+      import { OrbitControls } from "{{ url_for('static', filename='vendor/three/OrbitControls.js') }}";
+
+      window.THREE = THREE;
+      window.OrbitControls = OrbitControls;
+      window.__three_ready = true;
+      window.dispatchEvent(new Event("three-ready"));
+    </script>
     <script>
       // Front-end state setup & DOM references. Keeps real-time UI consistent.
       // 前端状态与 DOM 引用定义，用于维持实时界面一致性。
@@ -325,6 +332,14 @@
       let currentEventSource = null;
       let streamReconnectTimerId = null;
       let streamReconnectAttempts = 0;
+
+      window.addEventListener("three-ready", () => {
+        // Re-render heatmaps as soon as Three.js becomes available / Three.js 就绪后立即重绘热力图
+        updateAllHeatmaps();
+      });
+      if (window.__three_ready) {
+        updateAllHeatmaps();
+      }
 
       // --- Stream lifecycle helpers: manage SSE backoff/retry flow ---
       // --- 流式连接辅助：管理 SSE 回退与重连流程 ---
@@ -969,6 +984,306 @@
         return Math.trunc(value);
       }
 
+      // --- 3D pressure surface (Three.js) ---
+      const SURFACE_SUBDIV = 8; // number of interpolated steps between sensors
+      const SURFACE_HEIGHT_FRACTION = 0.35; // max height relative to sensor span
+      const SURFACE_LUT_SIZE = 256;
+      const SURFACE_MISSING_RGB = [0.87, 0.89, 0.90]; // ~ #dee2e6
+
+      function buildGradientLut(stops, size) {
+        const lut = new Float32Array(size * 3);
+        if (!Array.isArray(stops) || stops.length < 2 || size <= 1) {
+          return lut;
+        }
+        for (let i = 0; i < size; i += 1) {
+          const ratio = i / (size - 1);
+          let r = 0;
+          let g = 0;
+          let b = 0;
+          for (let s = 1; s < stops.length; s += 1) {
+            const prev = stops[s - 1];
+            const next = stops[s];
+            if (ratio <= next.stop) {
+              const span = next.stop - prev.stop || 1;
+              const localT = span === 0 ? 0 : (ratio - prev.stop) / span;
+              r = (prev.color[0] + (next.color[0] - prev.color[0]) * localT) / 255;
+              g = (prev.color[1] + (next.color[1] - prev.color[1]) * localT) / 255;
+              b = (prev.color[2] + (next.color[2] - prev.color[2]) * localT) / 255;
+              break;
+            }
+          }
+          const base = i * 3;
+          lut[base] = r;
+          lut[base + 1] = g;
+          lut[base + 2] = b;
+        }
+        return lut;
+      }
+
+      const SURFACE_GRADIENT_LUT = buildGradientLut(GRADIENT_STOPS, SURFACE_LUT_SIZE);
+
+      function threeIsAvailable() {
+        return Boolean(window.THREE && window.THREE.WebGLRenderer && window.OrbitControls);
+      }
+
+      function buildSurfaceGeometry(rows, cols, subdiv) {
+        const safeRows = Math.max(1, rows);
+        const safeCols = Math.max(1, cols);
+        const steps = Math.max(0, Number.isInteger(subdiv) ? subdiv : 0);
+        const segments = steps + 1;
+        const fineCols = (safeCols - 1) * segments + 1;
+        const fineRows = (safeRows - 1) * segments + 1;
+        const fineW = Math.max(0, fineCols - 1);
+        const fineH = Math.max(0, fineRows - 1);
+        const sensorW = Math.max(0, safeCols - 1);
+        const sensorH = Math.max(0, safeRows - 1);
+        const step = 1 / segments;
+        const pointCount = fineCols * fineRows;
+
+        const positions = new Float32Array(pointCount * 3);
+        const colors = new Float32Array(pointCount * 3);
+        const sampleIndices = new Int32Array(pointCount * 4);
+        const sampleWeights = new Float32Array(pointCount * 4);
+
+        const halfX = sensorW / 2;
+        const halfZ = sensorH / 2;
+
+        let ptr = 0;
+        for (let fy = 0; fy < fineRows; fy += 1) {
+          const sy = fineH === 0 ? 0 : (fy / fineH) * sensorH;
+          const y0 = Math.floor(sy);
+          const y1 = Math.min(safeRows - 1, y0 + 1);
+          const ty = sy - y0;
+          for (let fx = 0; fx < fineCols; fx += 1) {
+            const sx = fineW === 0 ? 0 : (fx / fineW) * sensorW;
+            const x0 = Math.floor(sx);
+            const x1 = Math.min(safeCols - 1, x0 + 1);
+            const tx = sx - x0;
+
+            const p = (fy * fineCols + fx) * 3;
+            positions[p] = fx * step - halfX;
+            positions[p + 1] = 0;
+            positions[p + 2] = fy * step - halfZ;
+
+            const w00 = (1 - tx) * (1 - ty);
+            const w10 = tx * (1 - ty);
+            const w01 = (1 - tx) * ty;
+            const w11 = tx * ty;
+
+            sampleIndices[ptr] = y0 * safeCols + x0;
+            sampleWeights[ptr] = w00;
+            ptr += 1;
+            sampleIndices[ptr] = y0 * safeCols + x1;
+            sampleWeights[ptr] = w10;
+            ptr += 1;
+            sampleIndices[ptr] = y1 * safeCols + x0;
+            sampleWeights[ptr] = w01;
+            ptr += 1;
+            sampleIndices[ptr] = y1 * safeCols + x1;
+            sampleWeights[ptr] = w11;
+            ptr += 1;
+
+            const c = SURFACE_MISSING_RGB;
+            const cBase = (fy * fineCols + fx) * 3;
+            colors[cBase] = c[0];
+            colors[cBase + 1] = c[1];
+            colors[cBase + 2] = c[2];
+          }
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+        geometry.userData = { rows: safeRows, cols: safeCols, fineRows, fineCols, step };
+
+        return { geometry, sampleIndices, sampleWeights };
+      }
+
+      function ensureThreeSurface(panel, rows, cols) {
+        if (!panel || !panel.heatmapContainer) {
+          return null;
+        }
+        if (!threeIsAvailable()) {
+          return null;
+        }
+
+        const safeRows = Math.max(1, rows);
+        const safeCols = Math.max(1, cols);
+
+        if (!panel.three) {
+          const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+          renderer.setPixelRatio(window.devicePixelRatio || 1);
+          renderer.domElement.className = "pressure-surface-canvas";
+
+          const scene = new THREE.Scene();
+          const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
+          const controls = new window.OrbitControls(camera, renderer.domElement);
+          controls.enableDamping = false;
+          controls.target.set(0, 0, 0);
+          controls.update();
+
+          const built = buildSurfaceGeometry(safeRows, safeCols, SURFACE_SUBDIV);
+          const material = new THREE.PointsMaterial({
+            size: Math.max(0.04, built.geometry.userData.step * 1.8),
+            sizeAttenuation: true,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.95
+          });
+          const points = new THREE.Points(built.geometry, material);
+          scene.add(points);
+
+          const span = Math.max(safeCols - 1, safeRows - 1, 1);
+          camera.position.set(0, span * 0.9, span * 1.4);
+          camera.lookAt(0, 0, 0);
+          controls.minDistance = span * 0.6;
+          controls.maxDistance = span * 8;
+          controls.update();
+
+          const three = {
+            renderer,
+            scene,
+            camera,
+            controls,
+            points,
+            geometry: built.geometry,
+            sampleIndices: built.sampleIndices,
+            sampleWeights: built.sampleWeights,
+            rows: safeRows,
+            cols: safeCols,
+            lastWidth: 0,
+            lastHeight: 0
+          };
+          controls.addEventListener("change", () => {
+            if (three.lastWidth > 0 && three.lastHeight > 0) {
+              renderer.render(scene, camera);
+            }
+          });
+
+          panel.three = three;
+          return three;
+        }
+
+        const three = panel.three;
+        if (three.rows !== safeRows || three.cols !== safeCols) {
+          const oldGeometry = three.geometry;
+          const built = buildSurfaceGeometry(safeRows, safeCols, SURFACE_SUBDIV);
+          three.geometry = built.geometry;
+          three.sampleIndices = built.sampleIndices;
+          three.sampleWeights = built.sampleWeights;
+          three.rows = safeRows;
+          three.cols = safeCols;
+          three.points.geometry = three.geometry;
+          if (oldGeometry) oldGeometry.dispose();
+
+          const span = Math.max(safeCols - 1, safeRows - 1, 1);
+          three.camera.position.set(0, span * 0.9, span * 1.4);
+          three.camera.lookAt(0, 0, 0);
+          three.controls.minDistance = span * 0.6;
+          three.controls.maxDistance = span * 8;
+          three.controls.update();
+
+          const newSize = Math.max(0.04, three.geometry.userData.step * 1.8);
+          if (three.points.material && three.points.material.size !== newSize) {
+            three.points.material.size = newSize;
+          }
+        }
+
+        return three;
+      }
+
+      function resizeThreeSurface(panel) {
+        const container = panel?.heatmapContainer;
+        const three = panel?.three;
+        if (!container || !three) {
+          return;
+        }
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        if (!width || !height) {
+          return;
+        }
+        if (width === three.lastWidth && height === three.lastHeight) {
+          return;
+        }
+        three.lastWidth = width;
+        three.lastHeight = height;
+        three.renderer.setSize(width, height, false);
+        three.camera.aspect = width / height;
+        three.camera.updateProjectionMatrix();
+      }
+
+      function updateThreeSurface(panel, ctx, range) {
+        const three = panel?.three;
+        if (!three || !ctx || ctx.state !== "ready") {
+          return;
+        }
+        const sensorValues = ctx.displayValues;
+        if (!Array.isArray(sensorValues) || sensorValues.length < ctx.rows * ctx.cols) {
+          return;
+        }
+
+        const min = Number.isFinite(range?.min) ? range.min : 0;
+        const max = Number.isFinite(range?.max) ? range.max : min;
+        const rangeSpan = max - min;
+
+        const span = Math.max(ctx.cols - 1, ctx.rows - 1, 1);
+        const heightScale =
+          Number.isFinite(rangeSpan) && rangeSpan > 0 ? (span * SURFACE_HEIGHT_FRACTION) / rangeSpan : 0;
+
+        const posAttr = three.geometry.getAttribute("position");
+        const colAttr = three.geometry.getAttribute("color");
+        const pos = posAttr.array;
+        const col = colAttr.array;
+
+        const lutSize = SURFACE_LUT_SIZE;
+        const lut = SURFACE_GRADIENT_LUT;
+        const missing = SURFACE_MISSING_RGB;
+
+        const indices = three.sampleIndices;
+        const weights = three.sampleWeights;
+        const pointCount = indices.length / 4;
+
+        for (let i = 0; i < pointCount; i += 1) {
+          const base4 = i * 4;
+          let sum = 0;
+          let wSum = 0;
+          for (let k = 0; k < 4; k += 1) {
+            const idx = indices[base4 + k];
+            const w = weights[base4 + k];
+            const v = sensorValues[idx];
+            if (Number.isFinite(v) && w > 0) {
+              sum += v * w;
+              wSum += w;
+            }
+          }
+          const value = wSum > 0 ? sum / wSum : NaN;
+          const posBase = i * 3;
+          const colBase = i * 3;
+
+          if (!Number.isFinite(value)) {
+            pos[posBase + 1] = 0;
+            col[colBase] = missing[0];
+            col[colBase + 1] = missing[1];
+            col[colBase + 2] = missing[2];
+            continue;
+          }
+
+          const clamped = Math.min(max, Math.max(min, value));
+          pos[posBase + 1] = heightScale > 0 ? (clamped - min) * heightScale : 0;
+
+          const ratio = rangeSpan > 0 ? (clamped - min) / rangeSpan : 0;
+          const lutIdx = Math.max(0, Math.min(lutSize - 1, Math.round(ratio * (lutSize - 1))));
+          const lutBase = lutIdx * 3;
+          col[colBase] = lut[lutBase];
+          col[colBase + 1] = lut[lutBase + 1];
+          col[colBase + 2] = lut[lutBase + 2];
+        }
+
+        posAttr.needsUpdate = true;
+        colAttr.needsUpdate = true;
+      }
+
       function applyMirroring(values, rows, cols, options = {}) {
         const mirrorRowsFlag = Boolean(options.mirrorRows);
         const mirrorColsFlag = Boolean(options.mirrorCols);
@@ -1022,6 +1337,7 @@
         if (!panel || !panel.heatmapContainer) {
           return;
         }
+        panel.heatmapContainer.classList.remove("has-3d");
         panel.heatmapContainer.innerHTML = `<div class="heatmap-placeholder">${t(key)}</div>`;
       }
 
@@ -1072,7 +1388,7 @@
           return;
         }
         const container = panel.heatmapContainer;
-        container.innerHTML = "";
+        container.classList.remove("has-3d");
         if (!ctx || ctx.state === "missing") {
           container.innerHTML = "";
           return;
@@ -1091,29 +1407,24 @@
           setPanelPlaceholder(panel, placeholderKey);
           return;
         }
-        const grid = document.createElement("div");
-        grid.className = "heatmap-grid";
-        grid.style.setProperty("--rows", ctx.rows);
-        grid.style.setProperty("--cols", ctx.cols);
-        const min = Number.isFinite(range.min) ? range.min : 0;
-        const max = Number.isFinite(range.max) ? range.max : min;
-        ctx.displayValues.forEach((value) => {
-          const cell = document.createElement("div");
-          cell.className = "heatmap-cell";
-          if (Number.isFinite(value)) {
-            const displayValue = formatPressureValue(value);
-            cell.textContent = displayValue;
-            cell.style.backgroundColor = valueToColor(value, min, max);
-            cell.style.color = valueToTextColor(value, min, max);
-            cell.title = `${t("heatmap.tooltip.value")}${displayValue}`;
-          } else {
-            cell.classList.add("is-empty");
-            cell.textContent = "--";
-            cell.title = t("heatmap.tooltip.missing");
-          }
-          grid.appendChild(cell);
-        });
-        container.appendChild(grid);
+        if (!threeIsAvailable()) {
+          container.innerHTML = '<div class="heatmap-placeholder">3D 渲染库未加载</div>';
+          return;
+        }
+        const three = ensureThreeSurface(panel, ctx.rows, ctx.cols);
+        if (!three) {
+          container.innerHTML = '<div class="heatmap-placeholder">3D 渲染初始化失败</div>';
+          return;
+        }
+        if (three.renderer.domElement.parentElement !== container) {
+          container.innerHTML = "";
+          container.appendChild(three.renderer.domElement);
+        }
+        container.classList.add("has-3d");
+        resizeThreeSurface(panel);
+        updateThreeSurface(panel, ctx, range);
+        three.controls.update();
+        three.renderer.render(three.scene, three.camera);
       }
 
       function updateAllHeatmaps() {
@@ -1792,6 +2103,22 @@
       if (snapshotPollTimerId === null) {
         snapshotPollTimerId = window.setInterval(fetchSnapshot, SNAPSHOT_POLL_INTERVAL_MS);
       }
+      let resizeRafId = null;
+      window.addEventListener("resize", () => {
+        if (resizeRafId !== null) {
+          return;
+        }
+        resizeRafId = window.requestAnimationFrame(() => {
+          resizeRafId = null;
+          panelContexts.forEach((panel) => {
+            if (!panel?.three || !panel?.heatmapContainer?.classList.contains("has-3d")) {
+              return;
+            }
+            resizeThreeSurface(panel);
+            panel.three.renderer.render(panel.three.scene, panel.three.camera);
+          });
+        });
+      });
       window.addEventListener("beforeunload", () => {
         cleanupEventSource();
         clearStreamReconnectTimer();
