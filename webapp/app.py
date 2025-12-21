@@ -312,6 +312,27 @@ def proxy_stream() -> Response:
     return response
 
 
+@app.route("/api/record", methods=["POST"])
+def api_record() -> Response:
+    if config_service is None:
+        return jsonify({"error": "config_service_disabled", "detail": "Backend configuration service is not enabled."}), 503
+    
+    data = request.get_json(silent=True) or {}
+    dn = data.get("dn")
+    record = data.get("record")
+    
+    if not dn:
+        return jsonify({"error": "dn_required"}), 400
+    if record is None:
+        return jsonify({"error": "record_status_required"}), 400
+        
+    try:
+        result = config_service.publish_record_control(dn, bool(record))
+        return jsonify({"status": "ok", "data": result})
+    except Exception as exc:
+        return jsonify({"error": "publish_failed", "detail": str(exc)}), 500
+
+
 @app.route("/healthz")
 def healthz() -> Response:
     return jsonify({

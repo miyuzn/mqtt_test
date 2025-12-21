@@ -101,6 +101,7 @@ def load_config() -> dict:
     if alt_port:
         cfg["MQTT_BROKER_PORT"] = int(alt_port)
     cfg["MQTT_SUB_TOPIC"]   = env("MQTT_SUB_TOPIC", cfg["MQTT_SUB_TOPIC"])
+    cfg["MQTT_CONTROL_TOPIC"] = env("MQTT_CONTROL_TOPIC", "etx/v1/control/record")
     cfg["CLIENT_ID"]        = env("CLIENT_ID", cfg["CLIENT_ID"])
     cfg["ROOT_DIR"]         = env("SINK_ROOT_DIR", cfg["ROOT_DIR"])
     cfg["FLUSH_EVERY_ROWS"] = int(env("SINK_FLUSH_EVERY_ROWS", str(cfg["FLUSH_EVERY_ROWS"])))
@@ -118,6 +119,7 @@ def dn_to_hex(dn) -> str:
         dn_bytes = dn.to_bytes(6, "big", signed=False)
     elif isinstance(dn, str):
         h = dn.replace(" ", "").replace("-", "").lower()
+        if h.upper() == "ALL": return "ALL"
         if h.startswith("0x"): h = h[2:]
         dn_bytes = bytes.fromhex(h[-12:].rjust(12, "0"))
     else:
@@ -320,21 +322,55 @@ class MqttSink:
         self._running = True
         self._rx = 0
         self._last_stat = time.time()
+        self._recording_dns = set()
 
     def on_connect(self, client, userdata, flags, rc):
         print(f"[MQTT] connected rc={rc}")
         client.subscribe(self.cfg["MQTT_SUB_TOPIC"], qos=self.cfg["QOS"])
-        print(f"[MQTT] subscribed: {self.cfg['MQTT_SUB_TOPIC']}")
+        client.subscribe(self.cfg["MQTT_CONTROL_TOPIC"], qos=1)
+        print(f"[MQTT] subscribed: {self.cfg['MQTT_SUB_TOPIC']} & {self.cfg['MQTT_CONTROL_TOPIC']}")
 
     def on_message(self, client, userdata, msg):
+        # Handle Control Messages
+        if mqtt.topic_matches_sub(self.cfg["MQTT_CONTROL_TOPIC"], msg.topic):
+            try:
+                payload = json.loads(msg.payload.decode("utf-8"))
+                dn_raw = payload.get("dn")
+                should_record = bool(payload.get("record"))
+                
+                if dn_raw == "ALL":
+                    if should_record:
+                        self._recording_dns.add("*ALL*")
+                        print("[CTRL] Recording STARTED for ALL devices")
+                    else:
+                        self._recording_dns.clear()
+                        print("[CTRL] Recording STOPPED for ALL devices")
+                elif dn_raw:
+                    dn_hex = dn_to_hex(dn_raw)
+                    if should_record:
+                        self._recording_dns.add(dn_hex)
+                        print(f"[CTRL] Recording STARTED for {dn_hex}")
+                    else:
+                        self._recording_dns.discard(dn_hex)
+                        print(f"[CTRL] Recording STOPPED for {dn_hex}")
+            except Exception as e:
+                print(f"[CTRL] Failed to parse control message: {e}")
+            return
+
         b = msg.payload or b""
         frames = None
+        
+        def is_recording(dn):
+            return "*ALL*" in self._recording_dns or dn in self._recording_dns
+
         # 1) JSON takes priority because it already matches the CSV schema.
         # 首选 JSON 负载，因为字段布局与 CSV 完全一致。
         if b[:1] in (b"{", b"["):
             parsed = parse_json_payload(b, self.cfg) or []
             for item in parsed:
                 if not item: continue
+                if not is_recording(item["dn_hex"]): continue
+
                 ingest_time = datetime.now(JST)
                 self.store.write(item["dn_hex"], item["sn"], item["ts"],
                                  item["pressures"], item["mag"], item["gyro"], item["acc"],
@@ -351,18 +387,15 @@ class MqttSink:
                     sd = None
                 if not sd: continue
                 dn_hex = dn_to_hex(sd.dn)
+                if not is_recording(dn_hex): continue
+
                 ingest_time = datetime.now(JST)
                 self.store.write(dn_hex, int(sd.sn), float(sd.timestamp),
                                  sd.pressure_sensors, sd.magnetometer, sd.gyroscope, sd.accelerometer,
                                  ingest_time=ingest_time)
                 self._rx += 1
 
-        # Periodically log ingestion stats for quick health checks.
-        # 定期打印写入统计，便于快速确认运行状态。
         now = time.time()
-        if (now - self._last_stat) >= 2.0:
-            print(f"[STATS] rows_written={self._rx}")
-            self._last_stat = now
 
     def run(self):
         self.client.connect(self.cfg["MQTT_BROKER_HOST"], self.cfg["MQTT_BROKER_PORT"], keepalive=30)

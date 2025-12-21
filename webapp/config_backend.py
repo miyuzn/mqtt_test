@@ -29,6 +29,7 @@ class ConfigService:
         cmd_topic: str,
         agent_topic_base: str,
         result_topic_base: str,
+        control_topic: str = "etx/v1/control/record",
         client_id: str | None = None,
         username: str | None = None,
         password: str | None = None,
@@ -40,6 +41,7 @@ class ConfigService:
         self._cmd_topic = cmd_topic.rstrip("/")
         self._agent_topic = agent_topic_base.rstrip("/") + "/#"
         self._result_topic = result_topic_base.rstrip("/") + "/#"
+        self._control_topic = control_topic
         self._device_ttl = device_ttl
         self._devices: Dict[str, dict] = {}
         self._agents: Dict[str, dict] = {}
@@ -292,6 +294,28 @@ class ConfigService:
             raise RuntimeError(f"MQTT 发布失败: {mqtt.error_string(result.rc)}")
         return {"command_id": command_id, "dn": "BROADCAST", "payload": payload_obj}
 
+    def publish_record_control(
+        self,
+        dn: str,
+        record: bool,
+        requested_by: str | None = None,
+    ) -> dict:
+        self._connected.wait(timeout=10)
+        target_dn = (dn or "").strip()
+        if target_dn.upper() != "ALL":
+            target_dn = target_dn.replace(" ", "").replace("-", "").upper()
+        else:
+            target_dn = "ALL"
+            
+        payload_obj = {"dn": target_dn, "record": record}
+        if requested_by:
+            payload_obj["requested_by"] = requested_by
+            
+        result = self._client.publish(self._control_topic, payload=json.dumps(payload_obj, ensure_ascii=False), qos=1)
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            raise RuntimeError(f"MQTT 发布失败: {mqtt.error_string(result.rc)}")
+        return {"dn": target_dn, "record": record}
+
     def stop(self) -> None:
         try:
             self._client.loop_stop()
@@ -306,6 +330,7 @@ def build_config_service_from_env() -> ConfigService:
     cmd_topic = os.getenv("CONFIG_CMD_TOPIC", "etx/v1/config/cmd")
     agent_topic = os.getenv("CONFIG_AGENT_TOPIC", "etx/v1/config/agents")
     result_topic = os.getenv("CONFIG_RESULT_TOPIC", "etx/v1/config/result")
+    control_topic = os.getenv("CONFIG_CONTROL_TOPIC", "etx/v1/control/record")
     ttl = int(os.getenv("CONFIG_DEVICE_TTL", "300"))
     username = os.getenv("CONFIG_BROKER_USERNAME")
     password = os.getenv("CONFIG_BROKER_PASSWORD")
@@ -316,6 +341,7 @@ def build_config_service_from_env() -> ConfigService:
         cmd_topic=cmd_topic,
         agent_topic_base=agent_topic,
         result_topic_base=result_topic,
+        control_topic=control_topic,
         client_id=client_id,
         username=username,
         password=password,
