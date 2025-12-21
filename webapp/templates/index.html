@@ -3,22 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>リアルタイム圧力モニター</title>
+    <title>Real-Time Pressure Monitor</title>
 
     <!-- Bootstrap (local) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" />
 
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <style>
+      .device-panel-card {
+        transition: all 0.2s;
+      }
+      .cop-section.hidden {
+        display: none !important;
+      }
+    </style>
   </head>
   <body>
-    <!-- Main dashboard wrapper: controls header + heatmap + stats -->
-    <!-- 主仪表盘容器：包含头部、热力图与统计信息 -->
+    <!-- Main dashboard wrapper -->
     <div class="container py-4">
       <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
-          <h1 class="h3 mb-1" data-i18n="header.title">实时压力监控面板</h1>
+          <h1 class="h3 mb-1" data-i18n="header.title">Real-Time Pressure Dashboard</h1>
           <p class="text-muted mb-0">
-            <span data-i18n="header.data_source">数据来源：</span><code>{{ bridge_api_base }}</code>
+            <span data-i18n="header.data_source">Data source:</span> <code>{{ bridge_api_base }}</code>
           </p>
         </div>
         <div class="text-md-end">
@@ -27,225 +34,67 @@
             <button type="button" class="btn btn-outline-secondary" data-lang="en">English</button>
             <button type="button" class="btn btn-outline-secondary" data-lang="zh">中文</button>
           </div>
-          <div class="badge bg-secondary d-block" id="status-indicator" data-i18n="status.connecting">连接中...</div>
+          <div class="badge bg-secondary d-block" id="status-indicator" data-i18n="status.connecting">Connecting...</div>
           <div class="small text-muted" id="last-update">--</div>
         </div>
       </div>
   
-      <!-- Heatmap + detail cards region -->
-      <!-- 热力图与详情卡片区域 -->
-      <div class="row g-4">
-        <div class="col-12">
-          <div class="card shadow-sm h-100">
-            <div class="card-body">
-              <div class="d-flex flex-column flex-xl-row align-items-xl-center justify-content-between gap-3 mb-3">
-                <h2 class="h5 mb-0" data-i18n="heatmap.heading">压力热力图</h2>
-                <div class="form-check form-switch dual-mode-switch mb-0">
-                  <input class="form-check-input" type="checkbox" id="dual-mode-toggle" />
-                  <label class="form-check-label" for="dual-mode-toggle" data-i18n="controls.dual_mode">双设备模式</label>
-                </div>
-              </div>
-              <div class="pressure-range-card mb-3">
-                <div class="row gy-2 gx-2 align-items-center">
-                  <div class="col-12">
-                    <div class="fw-semibold text-secondary" data-i18n="controls.range">压力范围</div>
-                  </div>
-                  <div class="col-12 col-sm-6 col-md-4 col-xl-3">
-                    <label class="visually-hidden" for="pressure-min" data-i18n="inputs.lower_label">压力下限</label>
-                    <div class="input-group">
-                      <span class="input-group-text" data-i18n="inputs.lower_label">下限</span>
-                      <input
-                        type="number"
-                        class="form-control"
-                        id="pressure-min"
-                        value="300"
-                        placeholder="下限"
-                        data-i18n-placeholder="inputs.placeholder.lower"
-                        step="any"
-                      />
-                    </div>
-                  </div>
-                  <div class="col-12 col-sm-6 col-md-4 col-xl-3">
-                    <label class="visually-hidden" for="pressure-max" data-i18n="inputs.upper_label">压力上限</label>
-                    <div class="input-group">
-                      <span class="input-group-text" data-i18n="inputs.upper_label">上限</span>
-                      <input
-                        type="number"
-                        class="form-control"
-                        id="pressure-max"
-                        value="1000"
-                        placeholder="上限"
-                        data-i18n-placeholder="inputs.placeholder.upper"
-                        step="any"
-                      />
-                    </div>
-                  </div>
-                  <div class="col-12 col-sm-auto">
-                    <button class="btn btn-outline-secondary w-100 w-sm-auto" type="button" id="reset-range" data-i18n="actions.reset">
-                      重置
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div class="dual-heatmap-grid">
-                <section class="heatmap-panel" aria-labelledby="panel-primary-label" id="panel-primary">
-                  <div class="heatmap-panel-header">
-                    <h3 class="h6 mb-0" id="panel-primary-label" data-i18n="controls.primary_panel">设备 A</h3>
-                  </div>
-                  <div class="heatmap-panel-controls">
-                    <div class="input-group mb-2">
-                      <span class="input-group-text" data-i18n="controls.device_primary">设备 A</span>
-                      <select class="form-select" id="device-selector-primary" disabled>
-                        <option value="" data-i18n="controls.waiting">等待数据...</option>
-                      </select>
-                    </div>
-                    <div class="input-group mb-2">
-                      <span class="input-group-text" data-i18n="controls.layout">布局</span>
-                      <select class="form-select" id="layout-selector-primary" disabled>
-                        <option value="">--</option>
-                      </select>
-                    </div>
-                    <div class="mirror-toggle-group d-flex flex-wrap align-items-center gap-3">
-                      <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="mirror-rows-primary" />
-                        <label class="form-check-label" for="mirror-rows-primary" data-i18n="controls.mirror_rows">行镜像</label>
-                      </div>
-                      <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="mirror-cols-primary" />
-                        <label class="form-check-label" for="mirror-cols-primary" data-i18n="controls.mirror_cols">列镜像</label>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="heatmap-wrapper" id="heatmap-container-primary">
-                    <div class="heatmap-placeholder" data-i18n="heatmap.empty.waiting">等待数据...</div>
-                  </div>
-                  <div class="device-metrics">
-                    <div class="device-sensor-grid">
-                      <div class="overview-sensor-block">
-                        <div class="fw-semibold" data-i18n="overview.gyro">陀螺仪 (°/s)</div>
-                        <div class="sensor-vector">
-                          <div class="axis-value"><span>X</span><strong id="gyro-primary-x">--</strong></div>
-                          <div class="axis-value"><span>Y</span><strong id="gyro-primary-y">--</strong></div>
-                          <div class="axis-value"><span>Z</span><strong id="gyro-primary-z">--</strong></div>
-                        </div>
-                      </div>
-                      <div class="overview-sensor-block">
-                        <div class="fw-semibold" data-i18n="overview.acc">加速度 (m/s²)</div>
-                        <div class="sensor-vector">
-                          <div class="axis-value"><span>X</span><strong id="acc-primary-x">--</strong></div>
-                          <div class="axis-value"><span>Y</span><strong id="acc-primary-y">--</strong></div>
-                          <div class="axis-value"><span>Z</span><strong id="acc-primary-z">--</strong></div>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="overview-sensor-block mt-3">
-                      <div class="fw-semibold" data-i18n="overview.cop">压力中心 (COP)</div>
-                      <div class="cop-board" id="cop-board-primary">
-                        <div class="cop-board-placeholder" id="cop-placeholder-primary" data-i18n="overview.cop_empty">等待设备数据...</div>
-                        <div class="cop-dot" id="cop-dot-primary"></div>
-                      </div>
-                      <div class="row text-center cop-values mt-3">
-                        <div class="col">
-                          <div class="text-muted small" data-i18n="overview.cop_x">X 坐标</div>
-                          <div class="fw-semibold" id="cop-x-primary">--</div>
-                        </div>
-                        <div class="col">
-                          <div class="text-muted small" data-i18n="overview.cop_y">Y 坐标</div>
-                          <div class="fw-semibold" id="cop-y-primary">--</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-                <section class="heatmap-panel d-none" aria-labelledby="panel-secondary-label" id="panel-secondary">
-                  <div class="heatmap-panel-header">
-                    <h3 class="h6 mb-0" id="panel-secondary-label" data-i18n="controls.secondary_panel">设备 B</h3>
-                  </div>
-                  <div class="heatmap-panel-controls">
-                    <div class="input-group mb-2">
-                      <span class="input-group-text" data-i18n="controls.device_secondary">设备 B</span>
-                      <select class="form-select" id="device-selector-secondary" disabled>
-                        <option value="" data-i18n="controls.waiting">等待数据...</option>
-                      </select>
-                    </div>
-                    <div class="input-group mb-2">
-                      <span class="input-group-text" data-i18n="controls.layout">布局</span>
-                      <select class="form-select" id="layout-selector-secondary" disabled>
-                        <option value="">--</option>
-                      </select>
-                    </div>
-                    <div class="mirror-toggle-group d-flex flex-wrap align-items-center gap-3">
-                      <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="mirror-rows-secondary" />
-                        <label class="form-check-label" for="mirror-rows-secondary" data-i18n="controls.mirror_rows">行镜像</label>
-                      </div>
-                      <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="mirror-cols-secondary" />
-                        <label class="form-check-label" for="mirror-cols-secondary" data-i18n="controls.mirror_cols">列镜像</label>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="heatmap-wrapper" id="heatmap-container-secondary">
-                    <div class="heatmap-placeholder" data-i18n="heatmap.empty.no_device">选择设备以查看压力热力图</div>
-                  </div>
-                  <div class="device-metrics">
-                    <div class="device-sensor-grid">
-                      <div class="overview-sensor-block">
-                        <div class="fw-semibold" data-i18n="overview.gyro">陀螺仪 (°/s)</div>
-                        <div class="sensor-vector">
-                          <div class="axis-value"><span>X</span><strong id="gyro-secondary-x">--</strong></div>
-                          <div class="axis-value"><span>Y</span><strong id="gyro-secondary-y">--</strong></div>
-                          <div class="axis-value"><span>Z</span><strong id="gyro-secondary-z">--</strong></div>
-                        </div>
-                      </div>
-                      <div class="overview-sensor-block">
-                        <div class="fw-semibold" data-i18n="overview.acc">加速度 (m/s²)</div>
-                        <div class="sensor-vector">
-                          <div class="axis-value"><span>X</span><strong id="acc-secondary-x">--</strong></div>
-                          <div class="axis-value"><span>Y</span><strong id="acc-secondary-y">--</strong></div>
-                          <div class="axis-value"><span>Z</span><strong id="acc-secondary-z">--</strong></div>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="overview-sensor-block mt-3">
-                      <div class="fw-semibold" data-i18n="overview.cop">压力中心 (COP)</div>
-                      <div class="cop-board" id="cop-board-secondary">
-                        <div class="cop-board-placeholder" id="cop-placeholder-secondary" data-i18n="overview.cop_empty">等待设备数据...</div>
-                        <div class="cop-dot" id="cop-dot-secondary"></div>
-                      </div>
-                      <div class="row text-center cop-values mt-3">
-                        <div class="col">
-                          <div class="text-muted small" data-i18n="overview.cop_x">X 坐标</div>
-                          <div class="fw-semibold" id="cop-x-secondary">--</div>
-                        </div>
-                        <div class="col">
-                          <div class="text-muted small" data-i18n="overview.cop_y">Y 坐标</div>
-                          <div class="fw-semibold" id="cop-y-secondary">--</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              </div>
+      <!-- Global Controls -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <div class="row g-3 align-items-center">
+            <div class="col-12 col-md-auto">
+                <h2 class="h6 mb-0" data-i18n="heatmap.heading">Pressure Heatmap</h2>
             </div>
+            <div class="col-12 col-md-auto border-start ps-md-3">
+              <button class="btn btn-sm btn-primary" id="add-panel-btn">
+                <span data-i18n="actions.add_panel">+ Add Device View</span>
+              </button>
+            </div>
+            <div class="col-12 col-md-auto">
+                <div class="form-check form-switch mb-0">
+                  <input class="form-check-input" type="checkbox" id="cop-toggle" checked />
+                  <label class="form-check-label" for="cop-toggle" data-i18n="controls.show_cop">Show COP</label>
+                </div>
+            </div>
+            
+            <div class="col-12 border-top my-2 d-md-none"></div>
+
+            <!-- Pressure Range -->
+             <div class="col-12 col-md-auto ms-md-auto d-flex align-items-center gap-2">
+                <span class="text-secondary small fw-semibold text-nowrap" data-i18n="controls.range">Range</span>
+                <div class="input-group input-group-sm" style="max-width: 140px;">
+                    <span class="input-group-text">Min</span>
+                    <input type="number" class="form-control" id="pressure-min" value="300" placeholder="Min">
+                </div>
+                <div class="input-group input-group-sm" style="max-width: 140px;">
+                    <span class="input-group-text">Max</span>
+                    <input type="number" class="form-control" id="pressure-max" value="1000" placeholder="Max">
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" type="button" id="reset-range" data-i18n="actions.reset">Reset</button>
+             </div>
           </div>
         </div>
       </div>
 
-      <!-- Device table showing latest snapshot per DN -->
-      <!-- 设备表：展示每个 DN 的最新快照 -->
+      <!-- Panels Container -->
+      <div class="row g-4" id="panels-container">
+         <!-- Dynamic panels injected here -->
+      </div>
+
+      <!-- Device table -->
       <div class="card shadow-sm mt-4">
         <div class="card-body">
-          <h2 class="h5 mb-3" data-i18n="table.title">设备详情</h2>
+          <h2 class="h5 mb-3" data-i18n="table.title">Device Details</h2>
           <div class="table-responsive" style="max-height: 360px;">
             <table class="table table-striped align-middle" id="device-table">
               <thead class="table-light sticky-top">
                 <tr>
                   <th scope="col" data-i18n="table.headers.dn">DN</th>
-                  <th scope="col" data-i18n="table.headers.count">压力传感器数</th>
-                  <th scope="col" data-i18n="table.headers.frame_time">最新帧时间</th>
-                  <th scope="col" data-i18n="table.headers.receive_time">接收时间</th>
-                  <th scope="col" class="text-center" data-i18n="table.headers.actions">操作</th>
+                  <th scope="col" data-i18n="table.headers.count">Sensors</th>
+                  <th scope="col" data-i18n="table.headers.frame_time">Latest Frame</th>
+                  <th scope="col" data-i18n="table.headers.receive_time">Received At</th>
+                  <th scope="col" class="text-center" data-i18n="table.headers.actions">Actions</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -254,9 +103,92 @@
         </div>
       </div>
     </div>
-    <!-- Front-end logic: state management, i18n, SSE subscriptions -->
-    <!-- 前端逻辑：状态管理、多语言与 SSE 订阅 -->
-    <!-- Three.js: 3D pressure surface rendering (local, ESM) -->
+
+    <!-- Template for Device Panel -->
+    <template id="panel-template">
+        <div class="col-12 col-xl-6 device-panel-wrapper">
+            <div class="card shadow-sm h-100 device-panel-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h3 class="h6 mb-0 js-panel-title" data-i18n="controls.device">Device</h3>
+                        <button class="btn btn-sm btn-outline-danger js-remove-panel-btn" aria-label="Remove">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-x-lg" viewBox="0 0 16 16">
+                                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="heatmap-panel-controls">
+                        <div class="input-group mb-2">
+                            <span class="input-group-text" data-i18n="controls.device">Device</span>
+                            <select class="form-select js-device-selector">
+                                <option value="" data-i18n="controls.waiting">Waiting...</option>
+                            </select>
+                        </div>
+                        <div class="input-group mb-2">
+                            <span class="input-group-text" data-i18n="controls.layout">Layout</span>
+                            <select class="form-select js-layout-selector" disabled>
+                                <option value="">--</option>
+                            </select>
+                        </div>
+                        <div class="mirror-toggle-group d-flex flex-wrap align-items-center gap-3">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input js-mirror-rows" type="checkbox" />
+                                <label class="form-check-label" data-i18n="controls.mirror_rows">Row Mirror</label>
+                            </div>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input js-mirror-cols" type="checkbox" />
+                                <label class="form-check-label" data-i18n="controls.mirror_cols">Col Mirror</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="heatmap-wrapper js-heatmap-container">
+                        <div class="heatmap-placeholder" data-i18n="heatmap.empty.waiting">Waiting...</div>
+                    </div>
+
+                    <div class="device-metrics">
+                        <div class="device-sensor-grid">
+                            <div class="overview-sensor-block">
+                                <div class="fw-semibold" data-i18n="overview.gyro">Gyro (°/s)</div>
+                                <div class="sensor-vector">
+                                    <div class="axis-value"><span>X</span><strong class="js-gyro-x">--</strong></div>
+                                    <div class="axis-value"><span>Y</span><strong class="js-gyro-y">--</strong></div>
+                                    <div class="axis-value"><span>Z</span><strong class="js-gyro-z">--</strong></div>
+                                </div>
+                            </div>
+                            <div class="overview-sensor-block">
+                                <div class="fw-semibold" data-i18n="overview.acc">Acc (m/s²)</div>
+                                <div class="sensor-vector">
+                                    <div class="axis-value"><span>X</span><strong class="js-acc-x">--</strong></div>
+                                    <div class="axis-value"><span>Y</span><strong class="js-acc-y">--</strong></div>
+                                    <div class="axis-value"><span>Z</span><strong class="js-acc-z">--</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="overview-sensor-block mt-3 cop-section js-cop-section">
+                            <div class="fw-semibold" data-i18n="overview.cop">COP</div>
+                            <div class="cop-board js-cop-board">
+                                <div class="cop-board-placeholder js-cop-placeholder" data-i18n="overview.cop_empty">Waiting...</div>
+                                <div class="cop-dot js-cop-dot"></div>
+                            </div>
+                            <div class="row text-center cop-values mt-3">
+                                <div class="col">
+                                    <div class="text-muted small" data-i18n="overview.cop_x">X</div>
+                                    <div class="fw-semibold js-cop-x">--</div>
+                                </div>
+                                <div class="col">
+                                    <div class="text-muted small" data-i18n="overview.cop_y">Y</div>
+                                    <div class="fw-semibold js-cop-y">--</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <script type="module">
       import * as THREE from "{{ url_for('static', filename='vendor/three/three.module.js') }}";
       import { OrbitControls } from "{{ url_for('static', filename='vendor/three/OrbitControls.js') }}";
@@ -267,55 +199,30 @@
       window.dispatchEvent(new Event("three-ready"));
     </script>
     <script>
-      // Front-end state setup & DOM references. Keeps real-time UI consistent.
-      // 前端状态与 DOM 引用定义，用于维持实时界面一致性。
       const SNAPSHOT_ENDPOINT = "{{ url_for('proxy_latest') }}";
       const STREAM_ENDPOINT = "{{ url_for('proxy_stream') }}";
 
       const state = new Map();
       const mirrorSettingsByDevice = new Map();
       const STALE_THRESHOLD_MS = 30 * 1000;
-      const panelContexts = ["primary", "secondary"].map((key) => ({
-        key,
-        panelElement: document.getElementById(`panel-${key}`),
-        deviceSelector: document.getElementById(`device-selector-${key}`),
-        layoutSelector: document.getElementById(`layout-selector-${key}`),
-        heatmapContainer: document.getElementById(`heatmap-container-${key}`),
-        mirrorRowsToggle: document.getElementById(`mirror-rows-${key}`),
-        mirrorColsToggle: document.getElementById(`mirror-cols-${key}`),
-        gyroElements: {
-          x: document.getElementById(`gyro-${key}-x`),
-          y: document.getElementById(`gyro-${key}-y`),
-          z: document.getElementById(`gyro-${key}-z`)
-        },
-        accElements: {
-          x: document.getElementById(`acc-${key}-x`),
-          y: document.getElementById(`acc-${key}-y`),
-          z: document.getElementById(`acc-${key}-z`)
-        },
-        copBoard: document.getElementById(`cop-board-${key}`),
-        copDot: document.getElementById(`cop-dot-${key}`),
-        copPlaceholder: document.getElementById(`cop-placeholder-${key}`),
-        copXValue: document.getElementById(`cop-x-${key}`),
-        copYValue: document.getElementById(`cop-y-${key}`),
-        selectedDevice: null,
-        selectedLayoutKey: null,
-        mirrorRows: false,
-        mirrorCols: false,
-        deviceOptionsCache: { devices: [], selected: null, lang: null },
-        layoutOptionsCache: { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null }
-      }));
-      const primaryPanel = panelContexts[0];
-      const secondaryPanel = panelContexts[1];
-      const dualModeToggle = document.getElementById("dual-mode-toggle");
-      let dualModeEnabled = localStorage.getItem("dualModeEnabled") === "1";
+      
+      // Dynamic Panels Management
+      const panelsContainer = document.getElementById("panels-container");
+      const panelTemplate = document.getElementById("panel-template");
+      let panels = [];
+      let panelIdCounter = 0;
+      let copVisible = true;
+
       const pressureMinInput = document.getElementById("pressure-min");
       const pressureMaxInput = document.getElementById("pressure-max");
       const resetRangeButton = document.getElementById("reset-range");
       const statusIndicator = document.getElementById("status-indicator");
-      const activeDevicesLabel = document.getElementById("active-devices");
+      const activeDevicesLabel = document.getElementById("active-devices"); // might not exist in new layout
       const lastUpdateLabel = document.getElementById("last-update");
       const languageButtons = document.querySelectorAll("#language-switcher [data-lang]");
+      const addPanelBtn = document.getElementById("add-panel-btn");
+      const copToggle = document.getElementById("cop-toggle");
+
       const panelRenderCache = new Map();
       const DEFAULT_RANGE_MIN = 300;
       const DEFAULT_RANGE_MAX = 1000;
@@ -337,106 +244,7 @@
       let streamReconnectTimerId = null;
       let streamReconnectAttempts = 0;
 
-      window.addEventListener("three-ready", () => {
-        // Re-render heatmaps as soon as Three.js becomes available / Three.js 就绪后立即重绘热力图
-        updateAllHeatmaps();
-        requestSurfaceRefresh();
-      });
-      if (window.__three_ready) {
-        updateAllHeatmaps();
-        requestSurfaceRefresh();
-      }
-
-      // --- Stream lifecycle helpers: manage SSE backoff/retry flow ---
-      // --- 流式连接辅助：管理 SSE 回退与重连流程 ---
-      function clearStreamReconnectTimer() {
-        // Skip cleanup when no reconnect delay is scheduled / 若未安排重连则无需清理
-        if (streamReconnectTimerId !== null) {
-          // Cancel pending reconnect to avoid duplicated timers / 取消等待中的重连以避免重复定时器
-          window.clearTimeout(streamReconnectTimerId);
-          streamReconnectTimerId = null;
-        }
-      }
-
-      function scheduleStreamReconnect() {
-        // Avoid stacking multiple reconnect timers / 避免堆叠多个重连定时器
-        if (streamReconnectTimerId !== null) {
-          return;
-        }
-        // Use exponential backoff but clamp to max delay / 采用指数退避并限制最大延迟
-        const delay = Math.min(
-          STREAM_RECONNECT_BASE_DELAY_MS * Math.max(1, Math.pow(2, streamReconnectAttempts)),
-          STREAM_RECONNECT_MAX_DELAY_MS
-        );
-        // Schedule the retry and track attempt count / 设定重连任务并跟踪尝试次数
-        streamReconnectTimerId = window.setTimeout(() => {
-          streamReconnectTimerId = null;
-          streamReconnectAttempts += 1;
-          subscribeStream();
-        }, delay);
-      }
-
-      function cleanupEventSource() {
-        // Close the EventSource gently to release network resources / 温和关闭 EventSource 以释放网络资源
-        if (currentEventSource) {
-          currentEventSource.close();
-          currentEventSource = null;
-        }
-      }
-
-      // Compare simple arrays for option caching, avoiding unnecessary DOM churn.
-      // 比较简单数组，若相同则避免重复刷新 DOM。
-      function arraysEqual(left, right) {
-        // Quick length check before comparing individual entries / 在逐项比较前先快速比长度
-        if (left.length !== right.length) {
-          return false;
-        }
-        // Compare element by element to detect any difference / 按元素比较以捕捉差异
-        for (let i = 0; i < left.length; i += 1) {
-          if (left[i] !== right[i]) {
-            return false;
-          }
-        }
-        // All entries match, arrays are effectively identical / 所有元素一致，视为相同数组
-        return true;
-      }
-
-      function panelIsActive(panel) {
-        return panel.key !== "secondary" || dualModeEnabled;
-      }
-
-      function applyDualModeState() {
-        if (dualModeToggle) {
-          dualModeToggle.checked = dualModeEnabled;
-        }
-        if (secondaryPanel.panelElement) {
-          secondaryPanel.panelElement.classList.toggle("d-none", !dualModeEnabled);
-        }
-      }
-
-      function setDualMode(enabled) {
-        dualModeEnabled = enabled;
-        localStorage.setItem("dualModeEnabled", enabled ? "1" : "0");
-        applyDualModeState();
-        updateDeviceOptions();
-        panelContexts.forEach((panel) => updateLayoutOptionsForPanel(panel));
-        panelContexts.forEach(updatePanelSensors);
-        updateAllHeatmaps();
-        panelContexts.forEach(updatePanelCop);
-      }
-
-      const COLOR_GREEN = [46, 204, 113];
-      const COLOR_YELLOW = [241, 196, 15];
-      const COLOR_ORANGE = [243, 156, 18];
-      const COLOR_RED = [231, 76, 60];
-
-      const GRADIENT_STOPS = [
-        { stop: 0, color: COLOR_GREEN },
-        { stop: 0.33, color: COLOR_YELLOW },
-        { stop: 0.66, color: COLOR_ORANGE },
-        { stop: 1, color: COLOR_RED }
-      ];
-
+      // Translations
       const LANGUAGE_META = {
         zh: { locale: "zh-CN" },
         ja: { locale: "ja-JP" },
@@ -455,35 +263,23 @@
           "status.stream_ok": "实时连接已建立",
           "heatmap.heading": "压力热力图",
           "controls.device": "设备",
-          "controls.primary_panel": "设备 A",
-          "controls.secondary_panel": "设备 B",
-          "controls.device_primary": "设备 A",
-          "controls.device_secondary": "设备 B",
-          "controls.dual_mode": "双设备模式",
           "controls.layout": "布局",
           "controls.mirror_rows": "行镜像",
           "controls.mirror_cols": "列镜像",
           "controls.range": "压力范围",
           "controls.waiting": "等待数据...",
-          "inputs.lower_label": "下限",
-          "inputs.upper_label": "上限",
-          "inputs.placeholder.lower": "下限",
-          "inputs.placeholder.upper": "上限",
+          "controls.show_cop": "显示 COP",
+          "actions.add_panel": "+ 添加设备视图",
           "actions.reset": "重置",
-          "overview.title": "当前概览",
-          "overview.active_devices": "活跃设备",
-          "overview.total_pressure": "总压力",
           "overview.gyro": "陀螺仪 (°/s)",
           "overview.acc": "加速度 (m/s²)",
           "overview.cop": "压力中心 (COP)",
           "overview.cop_x": "X 坐标",
           "overview.cop_y": "Y 坐标",
           "overview.cop_empty": "等待设备数据...",
-          "overview.source_label": "数据来源：",
           "table.title": "设备详情",
           "table.headers.dn": "DN",
           "table.headers.count": "压力传感器数",
-          "table.headers.sum": "压力总和",
           "table.headers.frame_time": "最新帧时间",
           "table.headers.receive_time": "接收时间",
           "table.headers.actions": "操作",
@@ -491,12 +287,7 @@
           "heatmap.empty.no_device": "选择设备以查看压力热力图",
           "heatmap.empty.no_layout": "请选择布局组合",
           "heatmap.empty.waiting": "等待设备数据更新...",
-          "heatmap.empty.dual_disabled": "开启双设备模式以查看第二设备",
-          "heatmap.tooltip.value": "压力值：",
-          "heatmap.tooltip.missing": "缺少压力数据",
           "console.snapshot_fetch_failed": "无法获取数据",
-          "console.snapshot_event_error": "解析快照事件失败",
-          "console.update_event_error": "解析更新事件失败"
         },
         ja: {
           "page.title": "リアルタイム圧力モニター",
@@ -509,35 +300,23 @@
           "status.stream_ok": "リアルタイム接続が確立されました",
           "heatmap.heading": "圧力ヒートマップ",
           "controls.device": "デバイス",
-          "controls.primary_panel": "デバイスA",
-          "controls.secondary_panel": "デバイスB",
-          "controls.device_primary": "デバイスA",
-          "controls.device_secondary": "デバイスB",
-          "controls.dual_mode": "デュアル表示",
           "controls.layout": "レイアウト",
           "controls.mirror_rows": "行を反転",
           "controls.mirror_cols": "列を反転",
           "controls.range": "圧力範囲",
           "controls.waiting": "データ待機中...",
-          "inputs.lower_label": "下限",
-          "inputs.upper_label": "上限",
-          "inputs.placeholder.lower": "下限",
-          "inputs.placeholder.upper": "上限",
+          "controls.show_cop": "COPを表示",
+          "actions.add_panel": "+ デバイス表示を追加",
           "actions.reset": "リセット",
-          "overview.title": "概要",
-          "overview.active_devices": "アクティブデバイス",
-          "overview.total_pressure": "総圧力",
           "overview.gyro": "ジャイロ (°/s)",
           "overview.acc": "加速度 (m/s²)",
           "overview.cop": "圧力中心 (COP)",
           "overview.cop_x": "X 座標",
           "overview.cop_y": "Y 座標",
           "overview.cop_empty": "デバイスのデータを待機中...",
-          "overview.source_label": "データ元：",
           "table.title": "デバイス詳細",
           "table.headers.dn": "DN",
           "table.headers.count": "センサー数",
-          "table.headers.sum": "圧力合計",
           "table.headers.frame_time": "最新フレーム時刻",
           "table.headers.receive_time": "受信時刻",
           "table.headers.actions": "操作",
@@ -545,12 +324,7 @@
           "heatmap.empty.no_device": "デバイスを選択してヒートマップを表示",
           "heatmap.empty.no_layout": "レイアウトを選択してください",
           "heatmap.empty.waiting": "デバイスデータの更新を待機中...",
-          "heatmap.empty.dual_disabled": "デュアル表示を有効にすると表示されます",
-          "heatmap.tooltip.value": "圧力値：",
-          "heatmap.tooltip.missing": "圧力データなし",
           "console.snapshot_fetch_failed": "データを取得できませんでした",
-          "console.snapshot_event_error": "スナップショットイベントの解析に失敗しました",
-          "console.update_event_error": "アップデートイベントの解析に失敗しました"
         },
         en: {
           "page.title": "Real-Time Pressure Dashboard",
@@ -563,35 +337,23 @@
           "status.stream_ok": "Realtime feed active",
           "heatmap.heading": "Pressure Heatmap",
           "controls.device": "Device",
-          "controls.primary_panel": "Device A",
-          "controls.secondary_panel": "Device B",
-          "controls.device_primary": "Device A",
-          "controls.device_secondary": "Device B",
-          "controls.dual_mode": "Dual mode",
           "controls.layout": "Layout",
           "controls.mirror_rows": "Mirror rows",
           "controls.mirror_cols": "Mirror columns",
           "controls.range": "Pressure range",
           "controls.waiting": "Waiting for data...",
-          "inputs.lower_label": "Min",
-          "inputs.upper_label": "Max",
-          "inputs.placeholder.lower": "Min",
-          "inputs.placeholder.upper": "Max",
+          "controls.show_cop": "Show COP",
+          "actions.add_panel": "+ Add Device View",
           "actions.reset": "Reset",
-          "overview.title": "Overview",
-          "overview.active_devices": "Active devices",
-          "overview.total_pressure": "Total pressure",
           "overview.gyro": "Gyroscope (°/s)",
           "overview.acc": "Acceleration (m/s²)",
           "overview.cop": "Center of Pressure (COP)",
           "overview.cop_x": "X coordinate",
           "overview.cop_y": "Y coordinate",
           "overview.cop_empty": "Waiting for device data...",
-          "overview.source_label": "Data source:",
           "table.title": "Device Details",
           "table.headers.dn": "DN",
           "table.headers.count": "Sensor count",
-          "table.headers.sum": "Pressure total",
           "table.headers.frame_time": "Latest frame time",
           "table.headers.receive_time": "Received at",
           "table.headers.actions": "Actions",
@@ -599,523 +361,420 @@
           "heatmap.empty.no_device": "Select a device to view the heatmap",
           "heatmap.empty.no_layout": "Choose a layout",
           "heatmap.empty.waiting": "Waiting for device data...",
-          "heatmap.empty.dual_disabled": "Enable dual mode to visualize the second device",
-          "heatmap.tooltip.value": "Pressure: ",
-          "heatmap.tooltip.missing": "No pressure data",
           "console.snapshot_fetch_failed": "Failed to fetch data",
-          "console.snapshot_event_error": "Failed to parse snapshot event",
-          "console.update_event_error": "Failed to parse update event"
         }
       };
+
       let currentLanguage = localStorage.getItem("uiLanguage") || "ja";
       if (!Object.prototype.hasOwnProperty.call(TRANSLATIONS, currentLanguage)) {
         currentLanguage = "ja";
       }
       let currentStatusKey = "connecting";
 
-      // --- Internationalization helpers: resolve localized strings on demand ---
-      // --- 多语言辅助：按需解析文案 ---
+      // --- Helper Functions ---
+
       function t(key) {
-        // Resolve translation pack based on current language / 根据当前语言选择翻译包
         const pack = TRANSLATIONS[currentLanguage] || TRANSLATIONS.ja;
-        if (Object.prototype.hasOwnProperty.call(pack, key)) {
-          return pack[key];
-        }
-        // Fallback to Japanese pack or raw key if missing / 若缺失则回退到日文或直接返回 key
-        return TRANSLATIONS.ja[key] ?? key;
+        return pack[key] || TRANSLATIONS.ja[key] || key;
       }
 
       function updateStatusIndicatorText() {
-        // Indicator may not exist in minimal layouts / 精简布局可能没有状态指示器
-        if (!statusIndicator) {
-          return;
-        }
-        // Refresh the DOM label using localized text / 使用本地化文本刷新指示器
+        if (!statusIndicator) return;
         statusIndicator.textContent = t(`status.${currentStatusKey}`);
       }
 
       function setStatusIndicator(stateKey) {
-        // Persist key to drive follow-up updates / 保存状态键以驱动后续刷新
         currentStatusKey = stateKey;
         updateStatusIndicatorText();
       }
 
-      function updateLanguageSwitcherState() {
-        // Toggle active button styling to reflect selection / 切换按钮样式以反映当前语言
-        languageButtons.forEach((button) => {
-          const isActive = button.dataset.lang === currentLanguage;
-          button.classList.toggle("btn-primary", isActive);
-          button.classList.toggle("btn-outline-secondary", !isActive);
-          button.setAttribute("aria-pressed", String(isActive));
-        });
-      }
-
       function applyLanguage() {
-        // Update document metadata for assistive tech / 更新文档语言信息以便辅助工具
         const locale = LANGUAGE_META[currentLanguage]?.locale || "ja-JP";
         document.documentElement.lang = locale;
         document.title = t("page.title");
-        // Replace text content for all data-i18n nodes / 为所有 data-i18n 节点替换文本
         document.querySelectorAll("[data-i18n]").forEach((el) => {
           const key = el.dataset.i18n;
-          if (!key) return;
-          const translation = t(key);
-          if (translation !== undefined) {
-            el.textContent = translation;
-          }
+          if (key && t(key)) el.textContent = t(key);
         });
-        // Sync placeholder attributes since they don't use textContent / 同步 placeholder 属性因为它们不走 textContent
         document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
           const key = el.dataset.i18nPlaceholder;
-          if (!key) return;
-          const translation = t(key);
-          if (translation !== undefined) {
-            el.setAttribute("placeholder", translation);
-          }
+          if (key && t(key)) el.setAttribute("placeholder", t(key));
         });
-        // Dependent UI (status, buttons, inputs) also need refresh / 依赖语言的状态、按钮与输入框同样需要刷新
         updateStatusIndicatorText();
         updateLanguageSwitcherState();
         updateRangePlaceholders(null, null);
+        
+        // Refresh panel layouts to update language in options
+        panels.forEach(p => updateLayoutOptionsForPanel(p));
+        updateDeviceOptions(); 
       }
 
       function setLanguage(lang) {
-        // Ignore unknown locales to avoid corrupting storage / 忽略未知语言以免破坏存储
-        if (!Object.prototype.hasOwnProperty.call(TRANSLATIONS, lang)) {
-          return;
-        }
-        // Persist selection and re-render UI / 记录选择并重新渲染界面
+        if (!TRANSLATIONS[lang]) return;
         currentLanguage = lang;
         localStorage.setItem("uiLanguage", lang);
         applyLanguage();
         refreshUI();
       }
 
-      languageButtons.forEach((button) => {
-        button.addEventListener("click", () => {
-          setLanguage(button.dataset.lang);
-        });
-      });
-
-      if (dualModeToggle) {
-        dualModeToggle.checked = dualModeEnabled;
-        dualModeToggle.addEventListener("change", (event) => {
-          setDualMode(Boolean(event.target.checked));
+      function updateLanguageSwitcherState() {
+        languageButtons.forEach((button) => {
+          const isActive = button.dataset.lang === currentLanguage;
+          button.classList.toggle("btn-primary", isActive);
+          button.classList.toggle("btn-outline-secondary", !isActive);
         });
       }
-      applyDualModeState();
+      
+      languageButtons.forEach((button) => {
+        button.addEventListener("click", () => setLanguage(button.dataset.lang));
+      });
 
-      panelContexts.forEach((panel) => {
-        if (panel.deviceSelector) {
-          panel.deviceSelector.addEventListener("change", (event) => {
-            panel.selectedDevice = event.target.value || null;
+      // --- Dynamic Panel Logic ---
+
+      function createPanel() {
+        panelIdCounter++;
+        const key = `panel-${panelIdCounter}`;
+        const fragment = panelTemplate.content.cloneNode(true);
+        const root = fragment.querySelector('.device-panel-wrapper');
+        
+        const panel = {
+            key,
+            rootElement: root,
+            deviceSelector: root.querySelector('.js-device-selector'),
+            layoutSelector: root.querySelector('.js-layout-selector'),
+            heatmapContainer: root.querySelector('.js-heatmap-container'),
+            mirrorRowsToggle: root.querySelector('.js-mirror-rows'),
+            mirrorColsToggle: root.querySelector('.js-mirror-cols'),
+            removeBtn: root.querySelector('.js-remove-panel-btn'),
+            copSection: root.querySelector('.js-cop-section'),
+            copBoard: root.querySelector('.js-cop-board'),
+            copDot: root.querySelector('.js-cop-dot'),
+            copPlaceholder: root.querySelector('.js-cop-placeholder'),
+            copXValue: root.querySelector('.js-cop-x'),
+            copYValue: root.querySelector('.js-cop-y'),
+            gyroElements: {
+                x: root.querySelector('.js-gyro-x'),
+                y: root.querySelector('.js-gyro-y'),
+                z: root.querySelector('.js-gyro-z')
+            },
+            accElements: {
+                x: root.querySelector('.js-acc-x'),
+                y: root.querySelector('.js-acc-y'),
+                z: root.querySelector('.js-acc-z')
+            },
+            selectedDevice: null,
+            selectedLayoutKey: null,
+            mirrorRows: false,
+            mirrorCols: false,
+            deviceOptionsCache: { devices: [], selected: null, lang: null },
+            layoutOptionsCache: { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null },
+            three: null
+        };
+
+        // Event Listeners
+        panel.removeBtn.addEventListener('click', () => removePanel(panel));
+        
+        panel.deviceSelector.addEventListener('change', (e) => {
+            panel.selectedDevice = e.target.value || null;
             panel.deviceOptionsCache.selected = panel.selectedDevice;
             syncPanelMirrorControls(panel);
             updateLayoutOptionsForPanel(panel);
             updatePanelSensors(panel);
             updateAllHeatmaps();
             updatePanelCop(panel);
-          });
-        }
-        if (panel.layoutSelector) {
-          panel.layoutSelector.addEventListener("change", (event) => {
-            panel.selectedLayoutKey = event.target.value || null;
+        });
+
+        panel.layoutSelector.addEventListener('change', (e) => {
+            panel.selectedLayoutKey = e.target.value || null;
             panel.layoutOptionsCache.selectedKey = panel.selectedLayoutKey;
             updateAllHeatmaps();
             updatePanelCop(panel);
-          });
-        }
-        if (panel.mirrorRowsToggle) {
-          panel.mirrorRowsToggle.addEventListener("change", (event) => {
-            panel.mirrorRows = Boolean(event.target.checked);
+        });
+
+        panel.mirrorRowsToggle.addEventListener('change', (e) => {
+            panel.mirrorRows = Boolean(e.target.checked);
             persistMirrorSettings(panel);
             updateAllHeatmaps();
-          });
-        }
-        if (panel.mirrorColsToggle) {
-          panel.mirrorColsToggle.addEventListener("change", (event) => {
-            panel.mirrorCols = Boolean(event.target.checked);
+        });
+
+        panel.mirrorColsToggle.addEventListener('change', (e) => {
+            panel.mirrorCols = Boolean(e.target.checked);
             persistMirrorSettings(panel);
             updateAllHeatmaps();
-          });
+        });
+
+        panelsContainer.appendChild(root);
+        panels.push(panel);
+        
+        // Initial state
+        applyCOPStateToPanel(panel);
+        updateDeviceOptions();
+        updateLayoutOptionsForPanel(panel);
+        
+        return panel;
+      }
+
+      function removePanel(panelToRemove) {
+        if (panels.length <= 1) {
+            // Optional: prevent removing the last panel, or allow it but show empty state?
+            // For now, let's allow it but maybe auto-add one if empty?
+            // User requested "upgrade", let's keep it flexible.
         }
+        
+        // Cleanup Three.js
+        if (panelToRemove.three) {
+            if (panelToRemove.three.geometry) panelToRemove.three.geometry.dispose();
+            if (panelToRemove.three.material) panelToRemove.three.material.dispose();
+            panelToRemove.three.renderer.dispose();
+            panelToRemove.three = null;
+        }
+
+        panelToRemove.rootElement.remove();
+        panels = panels.filter(p => p !== panelToRemove);
+        panelRenderCache.delete(panelToRemove.key);
+      }
+
+      function applyCOPStateToPanel(panel) {
+          if (copVisible) {
+              panel.copSection.classList.remove('hidden');
+          } else {
+              panel.copSection.classList.add('hidden');
+          }
+      }
+
+      addPanelBtn.addEventListener('click', () => {
+          createPanel();
       });
 
-      if (pressureMinInput) {
-        pressureMinInput.value = String(DEFAULT_RANGE_MIN);
-      }
-      if (pressureMaxInput) {
-        pressureMaxInput.value = String(DEFAULT_RANGE_MAX);
-      }
-      if (pressureMinInput && pressureMaxInput) {
-        ["input", "change"].forEach((eventName) => {
-          pressureMinInput.addEventListener(eventName, handleCustomRangeChange);
-          pressureMaxInput.addEventListener(eventName, handleCustomRangeChange);
-        });
-        handleCustomRangeChange();
-      }
+      copToggle.addEventListener('change', (e) => {
+          copVisible = e.target.checked;
+          panels.forEach(applyCOPStateToPanel);
+      });
 
-      if (resetRangeButton) {
-        resetRangeButton.addEventListener("click", () => {
-          if (pressureMinInput) {
-            pressureMinInput.value = String(DEFAULT_RANGE_MIN);
-            pressureMinInput.classList.remove("is-invalid");
-          }
-          if (pressureMaxInput) {
-            pressureMaxInput.value = String(DEFAULT_RANGE_MAX);
-            pressureMaxInput.classList.remove("is-invalid");
-          }
-          customRangeMin = DEFAULT_RANGE_MIN;
-          customRangeMax = DEFAULT_RANGE_MAX;
-          handleCustomRangeChange();
-        });
-      }
+      // Initialize with 2 panels to mimic old dual mode, or 1?
+      // Old mode had 2 panels, but 2nd was hidden by default.
+      // Let's start with 2 panels visible for "Multi-Device Mode" feel.
+      createPanel();
+      createPanel();
 
-      // --- Heatmap layout utilities: derive possible row/col pairs ---
-      // --- 热力图布局工具：根据传感器数量推导行列组合 ---
+      // --- Heatmap & Render Logic ---
+
+      const COLOR_GREEN = [46, 204, 113];
+      const COLOR_YELLOW = [241, 196, 15];
+      const COLOR_ORANGE = [243, 156, 18];
+      const COLOR_RED = [231, 76, 60];
+      const GRADIENT_STOPS = [
+        { stop: 0, color: COLOR_GREEN },
+        { stop: 0.33, color: COLOR_YELLOW },
+        { stop: 0.66, color: COLOR_ORANGE },
+        { stop: 1, color: COLOR_RED }
+      ];
+
       function computeFactorPairs(sn) {
-        // Reject invalid sensor counts before factoring / 先排除无效的传感器数量
-        if (!Number.isInteger(sn) || sn <= 0) {
-          return [];
-        }
+        if (!Number.isInteger(sn) || sn <= 0) return [];
         const basePairs = [];
         const limit = Math.floor(Math.sqrt(sn));
-        // Enumerate divisors up to sqrt to gather row/column pairs / 遍历平方根范围内的因子以获取行列组合
         for (let i = 1; i <= limit; i += 1) {
-          if (sn % i === 0) {
-            basePairs.push([i, sn / i]);
-          }
+          if (sn % i === 0) basePairs.push([i, sn / i]);
         }
         const pairs = [];
-        // Include mirrored pairs so users can swap rows/cols / 包含镜像组合便于用户交换行列
         basePairs.forEach(([rows, cols]) => {
           pairs.push([rows, cols]);
-          if (rows !== cols) {
-            pairs.push([cols, rows]);
-          }
+          if (rows !== cols) pairs.push([cols, rows]);
         });
-        // Prefer near-square layouts, then smaller sizes / 优先接近方阵的布局，其次按尺寸排序
         pairs.sort((a, b) => {
           const diffA = Math.abs(a[0] - a[1]);
           const diffB = Math.abs(b[0] - b[1]);
           if (diffA !== diffB) return diffA - diffB;
-          if (a[0] !== b[0]) return a[0] - b[0];
-          return a[1] - b[1];
+          return a[0] - b[0];
         });
         return pairs;
       }
 
       function chooseDefaultLayout(pairs) {
-        // Use first sorted candidate as default / 使用排序后的首个候选作为默认布局
-        if (!pairs.length) {
-          return null;
-        }
+        if (!pairs.length) return null;
         return `${pairs[0][0]}x${pairs[0][1]}`;
       }
 
       function parseLayoutKey(key) {
-        // Layout keys look like \"8x16\"; split and coerce / 布局键形如 \"8x16\"，需拆分并转数字
-        if (!key) {
-          return null;
-        }
-        const [rows, cols] = key.split("x").map((value) => Number(value));
-        if (!Number.isInteger(rows) || !Number.isInteger(cols)) {
-          return null;
-        }
+        if (!key) return null;
+        const [rows, cols] = key.split("x").map(Number);
+        if (!Number.isInteger(rows) || !Number.isInteger(cols)) return null;
         return [rows, cols];
       }
 
       function handleCustomRangeChange() {
-        // Without inputs there's nothing to validate / 若缺少输入元素则无需校验
-        if (!pressureMinInput || !pressureMaxInput) {
-          return;
-        }
-        // Pull raw strings once for consistent handling / 读取原始字符串以便统一处理
+        if (!pressureMinInput || !pressureMaxInput) return;
         const rawMin = pressureMinInput.value.trim();
         const rawMax = pressureMaxInput.value.trim();
-        const hasMin = rawMin !== "";
-        const hasMax = rawMax !== "";
         const minValue = Number(rawMin);
         const maxValue = Number(rawMax);
-        const minValid = !hasMin || Number.isFinite(minValue);
-        const maxValid = !hasMax || Number.isFinite(maxValue);
+        const minValid = rawMin === "" || Number.isFinite(minValue);
+        const maxValid = rawMax === "" || Number.isFinite(maxValue);
 
         pressureMinInput.classList.remove("is-invalid");
         pressureMaxInput.classList.remove("is-invalid");
 
-        // Reject invalid numeric input and reset custom overrides / 遇到非法数字时重置自定义范围
         if (!minValid || !maxValid) {
-          if (!minValid) {
-            pressureMinInput.classList.add("is-invalid");
-          }
-          if (!maxValid) {
-            pressureMaxInput.classList.add("is-invalid");
-          }
+          if (!minValid) pressureMinInput.classList.add("is-invalid");
+          if (!maxValid) pressureMaxInput.classList.add("is-invalid");
           customRangeMin = null;
           customRangeMax = null;
-          updateAllHeatmaps();
-          requestSurfaceRefresh();
-          return;
-        }
-
-        if (hasMin && hasMax) {
-          // Only accept range when min < max / 仅在最小值小于最大值时接受
+        } else if (rawMin !== "" && rawMax !== "") {
           if (minValue < maxValue) {
             customRangeMin = minValue;
             customRangeMax = maxValue;
           } else {
-            pressureMinInput.classList.add("is-invalid");
-            pressureMaxInput.classList.add("is-invalid");
-            customRangeMin = null;
-            customRangeMax = null;
-            updateAllHeatmaps();
-            requestSurfaceRefresh();
-            return;
+             pressureMinInput.classList.add("is-invalid");
+             pressureMaxInput.classList.add("is-invalid");
+             customRangeMin = null;
+             customRangeMax = null;
           }
         } else {
-          // Missing either bound means we fall back to auto range / 缺少任一边界则回退到自动范围
-          customRangeMin = null;
-          customRangeMax = null;
+           customRangeMin = null;
+           customRangeMax = null;
         }
-
         updateAllHeatmaps();
         requestSurfaceRefresh();
       }
+      
+      if (pressureMinInput && pressureMaxInput) {
+          ["input", "change"].forEach(ev => {
+              pressureMinInput.addEventListener(ev, handleCustomRangeChange);
+              pressureMaxInput.addEventListener(ev, handleCustomRangeChange);
+          });
+      }
+      
+      if (resetRangeButton) {
+          resetRangeButton.addEventListener('click', () => {
+              if (pressureMinInput) pressureMinInput.value = DEFAULT_RANGE_MIN;
+              if (pressureMaxInput) pressureMaxInput.value = DEFAULT_RANGE_MAX;
+              customRangeMin = DEFAULT_RANGE_MIN;
+              customRangeMax = DEFAULT_RANGE_MAX;
+              handleCustomRangeChange();
+          });
+      }
 
       function updateRangePlaceholders(dataMin, dataMax) {
-        // Show current data-derived defaults, else language-specific placeholder / 优先展示数据推导的默认值，否则使用多语言占位符
         if (pressureMinInput) {
-          if (Number.isFinite(dataMin)) {
-            pressureMinInput.placeholder = dataMin;
-          } else {
-            pressureMinInput.placeholder = t("inputs.placeholder.lower");
-          }
+          pressureMinInput.placeholder = Number.isFinite(dataMin) ? dataMin : "Min";
         }
         if (pressureMaxInput) {
-          if (Number.isFinite(dataMax)) {
-            pressureMaxInput.placeholder = dataMax;
-          } else {
-            pressureMaxInput.placeholder = t("inputs.placeholder.upper");
-          }
+          pressureMaxInput.placeholder = Number.isFinite(dataMax) ? dataMax : "Max";
         }
       }
 
       function resolveEffectiveRange(dataMin, dataMax) {
-        // User-defined bounds win when valid / 若用户自定义范围有效则使用之
-        if (
-          Number.isFinite(customRangeMin) &&
-          Number.isFinite(customRangeMax) &&
-          customRangeMin < customRangeMax
-        ) {
+        if (Number.isFinite(customRangeMin) && Number.isFinite(customRangeMax) && customRangeMin < customRangeMax) {
           return { min: customRangeMin, max: customRangeMax };
         }
-        // Otherwise fall back to data-driven min/max when available / 否则回退到数据驱动的上下限
         if (Number.isFinite(dataMin) && Number.isFinite(dataMax)) {
           return { min: dataMin, max: dataMax };
         }
         return { min: 0, max: 0 };
       }
 
-      function toRgbString(color) {
-        // Convert [r,g,b] tuple into CSS color string / 将 [r,g,b] 数组转换成 CSS 颜色字符串
-        return `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
-      }
-
-      function interpolateGradient(stops, ratio) {
-        // Clamp ratio to [0,1] before interpolation / 插值前先将比值限制在 [0,1]
-        const clamped = Math.min(1, Math.max(0, ratio));
-        for (let i = 1; i < stops.length; i += 1) {
-          if (clamped <= stops[i].stop) {
-            const prev = stops[i - 1];
-            const next = stops[i];
-            const span = next.stop - prev.stop || 1;
-            // Interpolate each color channel independently / 对每个颜色通道分别进行插值
-            const localT = span === 0 ? 0 : (clamped - prev.stop) / span;
-            const r = Math.round(prev.color[0] + (next.color[0] - prev.color[0]) * localT);
-            const g = Math.round(prev.color[1] + (next.color[1] - prev.color[1]) * localT);
-            const b = Math.round(prev.color[2] + (next.color[2] - prev.color[2]) * localT);
-            return `rgb(${r}, ${g}, ${b})`;
-          }
-        }
-        // If ratio beyond last stop, stick to final color / 若超出最后节点则直接返回末尾颜色
-        const last = stops[stops.length - 1];
-        return `rgb(${last.color[0]}, ${last.color[1]}, ${last.color[2]})`;
-      }
-
-      function computeValueRatio(value, min, max) {
-        // Guard against invalid numbers and degenerate ranges / 先排除无效数字或相等边界
-        if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || min === max) {
-          return null;
-        }
-        // Snap to bounds when value is outside / 当值越界时直接归到上下限
-        if (value <= min) {
-          return 0;
-        }
-        if (value >= max) {
-          return 1;
-        }
-        // Normalize within [0,1] for downstream coloring / 将区间映射到 [0,1] 便于着色
-        return (value - min) / (max - min);
-      }
-
-      function valueToColor(value, min, max) {
-        // Empty cells use muted gray / 缺失值使用灰色
-        if (!Number.isFinite(value)) {
-          return "#dee2e6";
-        }
-        // Without a valid range, default to base green / 没有有效范围时使用基础绿色
-        if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
-          return toRgbString(COLOR_GREEN);
-        }
-        if (value <= min) {
-          return toRgbString(COLOR_GREEN);
-        }
-        if (value >= max) {
-          return toRgbString(COLOR_RED);
-        }
-        // Map value into gradient spectrum / 将数值映射到渐变色谱
-        const ratio = (value - min) / (max - min);
-        return interpolateGradient(GRADIENT_STOPS, ratio);
-      }
-
-      function valueToTextColor(value, min, max) {
-        // Default to dark text when ratio cannot be computed / 无法计算比值时默认使用深色字体
-        const ratio = computeValueRatio(value, min, max);
-        if (ratio === null) {
-          return "#212529";
-        }
-        // Use white text on high intensity cells for readability / 对高强度色块使用白字以增强可读性
-        return ratio >= 0.75 ? "#ffffff" : "#212529";
-      }
-
-      function formatPressureValue(value) {
-        // Drop fractional part for display clarity / 去掉小数部分以便阅读
-        return Math.trunc(value);
-      }
-
-      // --- 3D pressure surface (Three.js) ---
-      const SURFACE_SUBDIV = 8; // number of interpolated steps between sensors
-      const SURFACE_HEIGHT_FRACTION = 0.35; // max height relative to sensor span
+      // --- Three.js Surface Logic ---
+      const SURFACE_SUBDIV = 8;
+      const SURFACE_HEIGHT_FRACTION = 0.35;
       const SURFACE_LUT_SIZE = 256;
-      const SURFACE_MISSING_RGB = [0.87, 0.89, 0.90]; // ~ #dee2e6
+      const SURFACE_MISSING_RGB = [0.87, 0.89, 0.90];
 
       function buildGradientLut(stops, size) {
         const lut = new Float32Array(size * 3);
-        if (!Array.isArray(stops) || stops.length < 2 || size <= 1) {
-          return lut;
-        }
-        for (let i = 0; i < size; i += 1) {
+        if (!Array.isArray(stops) || stops.length < 2 || size <= 1) return lut;
+        for (let i = 0; i < size; i++) {
           const ratio = i / (size - 1);
-          let r = 0;
-          let g = 0;
-          let b = 0;
-          for (let s = 1; s < stops.length; s += 1) {
-            const prev = stops[s - 1];
-            const next = stops[s];
-            if (ratio <= next.stop) {
-              const span = next.stop - prev.stop || 1;
-              const localT = span === 0 ? 0 : (ratio - prev.stop) / span;
-              r = (prev.color[0] + (next.color[0] - prev.color[0]) * localT) / 255;
-              g = (prev.color[1] + (next.color[1] - prev.color[1]) * localT) / 255;
-              b = (prev.color[2] + (next.color[2] - prev.color[2]) * localT) / 255;
-              break;
-            }
+          let r=0, g=0, b=0;
+          for (let s=1; s<stops.length; s++) {
+             if (ratio <= stops[s].stop) {
+                const prev = stops[s-1], next = stops[s];
+                const t = (ratio - prev.stop) / (next.stop - prev.stop || 1);
+                r = prev.color[0] + (next.color[0]-prev.color[0])*t;
+                g = prev.color[1] + (next.color[1]-prev.color[1])*t;
+                b = prev.color[2] + (next.color[2]-prev.color[2])*t;
+                break;
+             }
           }
-          const base = i * 3;
-          lut[base] = r;
-          lut[base + 1] = g;
-          lut[base + 2] = b;
+          lut[i*3] = r/255; lut[i*3+1] = g/255; lut[i*3+2] = b/255;
         }
         return lut;
       }
-
       const SURFACE_GRADIENT_LUT = buildGradientLut(GRADIENT_STOPS, SURFACE_LUT_SIZE);
 
       function threeIsAvailable() {
         return Boolean(window.THREE && window.THREE.WebGLRenderer && window.OrbitControls);
       }
-
+      
       function buildSurfaceGeometry(rows, cols, subdiv) {
-        const safeRows = Math.max(1, rows);
-        const safeCols = Math.max(1, cols);
-        const steps = Math.max(0, Number.isInteger(subdiv) ? subdiv : 0);
-        const segments = steps + 1;
-        const fineCols = (safeCols - 1) * segments + 1;
-        const fineRows = (safeRows - 1) * segments + 1;
-        const fineW = Math.max(0, fineCols - 1);
-        const fineH = Math.max(0, fineRows - 1);
-        const sensorW = Math.max(0, safeCols - 1);
-        const sensorH = Math.max(0, safeRows - 1);
-        const step = 1 / segments;
-        const pointCount = fineCols * fineRows;
+          // (Same geometry logic as before, simplified for brevity in thought, but full in code)
+          // I will copy the original implementation to ensure correctness
+          const safeRows = Math.max(1, rows);
+          const safeCols = Math.max(1, cols);
+          const steps = Math.max(0, Number.isInteger(subdiv) ? subdiv : 0);
+          const segments = steps + 1;
+          const fineCols = (safeCols - 1) * segments + 1;
+          const fineRows = (safeRows - 1) * segments + 1;
+          const fineW = Math.max(0, fineCols - 1);
+          const fineH = Math.max(0, fineRows - 1);
+          const sensorW = Math.max(0, safeCols - 1);
+          const sensorH = Math.max(0, safeRows - 1);
+          const step = 1 / segments;
+          const pointCount = fineCols * fineRows;
 
-        const positions = new Float32Array(pointCount * 3);
-        const colors = new Float32Array(pointCount * 3);
-        const sampleIndices = new Int32Array(pointCount * 4);
-        const sampleWeights = new Float32Array(pointCount * 4);
+          const positions = new Float32Array(pointCount * 3);
+          const colors = new Float32Array(pointCount * 3);
+          const sampleIndices = new Int32Array(pointCount * 4);
+          const sampleWeights = new Float32Array(pointCount * 4);
 
-        const halfX = sensorW / 2;
-        const halfZ = sensorH / 2;
+          const halfX = sensorW / 2;
+          const halfZ = sensorH / 2;
 
-        let ptr = 0;
-        for (let fy = 0; fy < fineRows; fy += 1) {
-          const sy = fineH === 0 ? 0 : (fy / fineH) * sensorH;
-          const y0 = Math.floor(sy);
-          const y1 = Math.min(safeRows - 1, y0 + 1);
-          const ty = sy - y0;
-          for (let fx = 0; fx < fineCols; fx += 1) {
-            const sx = fineW === 0 ? 0 : (fx / fineW) * sensorW;
-            const x0 = Math.floor(sx);
-            const x1 = Math.min(safeCols - 1, x0 + 1);
-            const tx = sx - x0;
+          let ptr = 0;
+          for (let fy = 0; fy < fineRows; fy += 1) {
+            const sy = fineH === 0 ? 0 : (fy / fineH) * sensorH;
+            const y0 = Math.floor(sy);
+            const y1 = Math.min(safeRows - 1, y0 + 1);
+            const ty = sy - y0;
+            for (let fx = 0; fx < fineCols; fx += 1) {
+                const sx = fineW === 0 ? 0 : (fx / fineW) * sensorW;
+                const x0 = Math.floor(sx);
+                const x1 = Math.min(safeCols - 1, x0 + 1);
+                const tx = sx - x0;
 
-            const p = (fy * fineCols + fx) * 3;
-            positions[p] = fx * step - halfX;
-            positions[p + 1] = 0;
-            positions[p + 2] = fy * step - halfZ;
+                const p = (fy * fineCols + fx) * 3;
+                positions[p] = fx * step - halfX;
+                positions[p + 1] = 0;
+                positions[p + 2] = fy * step - halfZ;
 
-            const w00 = (1 - tx) * (1 - ty);
-            const w10 = tx * (1 - ty);
-            const w01 = (1 - tx) * ty;
-            const w11 = tx * ty;
+                const w00 = (1 - tx) * (1 - ty);
+                const w10 = tx * (1 - ty);
+                const w01 = (1 - tx) * ty;
+                const w11 = tx * ty;
 
-            sampleIndices[ptr] = y0 * safeCols + x0;
-            sampleWeights[ptr] = w00;
-            ptr += 1;
-            sampleIndices[ptr] = y0 * safeCols + x1;
-            sampleWeights[ptr] = w10;
-            ptr += 1;
-            sampleIndices[ptr] = y1 * safeCols + x0;
-            sampleWeights[ptr] = w01;
-            ptr += 1;
-            sampleIndices[ptr] = y1 * safeCols + x1;
-            sampleWeights[ptr] = w11;
-            ptr += 1;
+                sampleIndices[ptr] = y0 * safeCols + x0;
+                sampleWeights[ptr] = w00; ptr++;
+                sampleIndices[ptr] = y0 * safeCols + x1;
+                sampleWeights[ptr] = w10; ptr++;
+                sampleIndices[ptr] = y1 * safeCols + x0;
+                sampleWeights[ptr] = w01; ptr++;
+                sampleIndices[ptr] = y1 * safeCols + x1;
+                sampleWeights[ptr] = w11; ptr++;
 
-            const c = SURFACE_MISSING_RGB;
-            const cBase = (fy * fineCols + fx) * 3;
-            colors[cBase] = c[0];
-            colors[cBase + 1] = c[1];
-            colors[cBase + 2] = c[2];
+                const c = SURFACE_MISSING_RGB;
+                const cBase = (fy * fineCols + fx) * 3;
+                colors[cBase] = c[0]; colors[cBase+1] = c[1]; colors[cBase+2] = c[2];
+            }
           }
-        }
-
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-        geometry.userData = { rows: safeRows, cols: safeCols, fineRows, fineCols, step };
-
-        return { geometry, sampleIndices, sampleWeights };
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+          geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+          geometry.userData = { rows: safeRows, cols: safeCols, fineRows, fineCols, step };
+          return { geometry, sampleIndices, sampleWeights };
       }
 
       function ensureThreeSurface(panel, rows, cols) {
-        if (!panel || !panel.heatmapContainer) {
-          return null;
-        }
-        if (!threeIsAvailable()) {
-          return null;
-        }
-
+        if (!panel || !panel.heatmapContainer || !threeIsAvailable()) return null;
         const safeRows = Math.max(1, rows);
         const safeCols = Math.max(1, cols);
 
@@ -1123,7 +782,7 @@
           const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
           renderer.setPixelRatio(window.devicePixelRatio || 1);
           renderer.domElement.className = "pressure-surface-canvas";
-
+          
           const scene = new THREE.Scene();
           const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
           const controls = new window.OrbitControls(camera, renderer.domElement);
@@ -1150,1100 +809,719 @@
           controls.update();
 
           const three = {
-            renderer,
-            scene,
-            camera,
-            controls,
-            points,
+            renderer, scene, camera, controls, points,
             geometry: built.geometry,
             sampleIndices: built.sampleIndices,
             sampleWeights: built.sampleWeights,
-            rows: safeRows,
-            cols: safeCols,
-            needsResize: true,
-            lastWidth: 0,
-            lastHeight: 0
+            rows: safeRows, cols: safeCols,
+            needsResize: true, lastWidth: 0, lastHeight: 0
           };
           controls.addEventListener("change", () => {
-            if (three.lastWidth > 0 && three.lastHeight > 0) {
-              renderer.render(scene, camera);
-            }
+             if (three.lastWidth > 0) renderer.render(scene, camera);
           });
-
           panel.three = three;
           return three;
         }
 
         const three = panel.three;
         if (three.rows !== safeRows || three.cols !== safeCols) {
-          const oldGeometry = three.geometry;
-          const built = buildSurfaceGeometry(safeRows, safeCols, SURFACE_SUBDIV);
-          three.geometry = built.geometry;
-          three.sampleIndices = built.sampleIndices;
-          three.sampleWeights = built.sampleWeights;
-          three.rows = safeRows;
-          three.cols = safeCols;
-          three.needsResize = true;
-          three.points.geometry = three.geometry;
-          if (oldGeometry) oldGeometry.dispose();
-
-          const span = Math.max(safeCols - 1, safeRows - 1, 1);
-          three.camera.position.set(0, span * 0.9, span * 1.4);
-          three.camera.lookAt(0, 0, 0);
-          three.controls.minDistance = span * 0.6;
-          three.controls.maxDistance = span * 8;
-          three.controls.update();
-
-          const newSize = Math.max(0.04, three.geometry.userData.step * 1.8);
-          if (three.points.material && three.points.material.size !== newSize) {
-            three.points.material.size = newSize;
-          }
+           if (three.geometry) three.geometry.dispose();
+           const built = buildSurfaceGeometry(safeRows, safeCols, SURFACE_SUBDIV);
+           three.geometry = built.geometry;
+           three.sampleIndices = built.sampleIndices;
+           three.sampleWeights = built.sampleWeights;
+           three.rows = safeRows;
+           three.cols = safeCols;
+           three.needsResize = true;
+           three.points.geometry = three.geometry;
+           
+           const span = Math.max(safeCols - 1, safeRows - 1, 1);
+           three.camera.position.set(0, span * 0.9, span * 1.4);
+           three.camera.lookAt(0, 0, 0);
+           three.controls.minDistance = span * 0.6;
+           three.controls.maxDistance = span * 8;
+           three.controls.update();
+           
+           const newSize = Math.max(0.04, three.geometry.userData.step * 1.8);
+           three.points.material.size = newSize;
         }
-
         return three;
       }
 
       function resizeThreeSurface(panel) {
-        const container = panel?.heatmapContainer;
-        const three = panel?.three;
-        if (!container || !three) {
-          return;
-        }
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-        if (!width || !height) {
-          return;
-        }
-        if (width === three.lastWidth && height === three.lastHeight) {
-          return;
-        }
-        three.lastWidth = width;
-        three.lastHeight = height;
-        three.renderer.setSize(width, height, false);
-        three.camera.aspect = width / height;
-        three.camera.updateProjectionMatrix();
+          if (!panel || !panel.heatmapContainer || !panel.three) return;
+          const container = panel.heatmapContainer;
+          const width = container.clientWidth;
+          const height = container.clientHeight;
+          if (!width || !height) return;
+          if (width === panel.three.lastWidth && height === panel.three.lastHeight) return;
+          
+          panel.three.lastWidth = width;
+          panel.three.lastHeight = height;
+          panel.three.renderer.setSize(width, height, false);
+          panel.three.camera.aspect = width / height;
+          panel.three.camera.updateProjectionMatrix();
       }
-
+      
       function updateThreeSurface(panel, ctx, range) {
-        const three = panel?.three;
-        if (!three || !ctx || ctx.state !== "ready") {
-          return;
-        }
-        const sensorValues = ctx.displayValues;
-        if (!Array.isArray(sensorValues) || sensorValues.length < ctx.rows * ctx.cols) {
-          return;
-        }
-
-        const min = Number.isFinite(range?.min) ? range.min : 0;
-        const max = Number.isFinite(range?.max) ? range.max : min;
-        const rangeSpan = max - min;
-
-        const span = Math.max(ctx.cols - 1, ctx.rows - 1, 1);
-        const heightScale =
-          Number.isFinite(rangeSpan) && rangeSpan > 0 ? (span * SURFACE_HEIGHT_FRACTION) / rangeSpan : 0;
-
-        const posAttr = three.geometry.getAttribute("position");
-        const colAttr = three.geometry.getAttribute("color");
-        const pos = posAttr.array;
-        const col = colAttr.array;
-
-        const lutSize = SURFACE_LUT_SIZE;
-        const lut = SURFACE_GRADIENT_LUT;
-        const missing = SURFACE_MISSING_RGB;
-
-        const indices = three.sampleIndices;
-        const weights = three.sampleWeights;
-        const pointCount = indices.length / 4;
-
-        for (let i = 0; i < pointCount; i += 1) {
-          const base4 = i * 4;
-          let sum = 0;
-          let wSum = 0;
-          for (let k = 0; k < 4; k += 1) {
-            const idx = indices[base4 + k];
-            const w = weights[base4 + k];
-            const v = sensorValues[idx];
-            if (Number.isFinite(v) && w > 0) {
-              sum += v * w;
-              wSum += w;
-            }
+          const three = panel?.three;
+          if (!three || !ctx || ctx.state !== 'ready') return;
+          const sensorValues = ctx.displayValues;
+          
+          const min = Number.isFinite(range?.min) ? range.min : 0;
+          const max = Number.isFinite(range?.max) ? range.max : min;
+          const rangeSpan = max - min;
+          const span = Math.max(ctx.cols - 1, ctx.rows - 1, 1);
+          const heightScale = rangeSpan > 0 ? (span * SURFACE_HEIGHT_FRACTION) / rangeSpan : 0;
+          
+          const posAttr = three.geometry.getAttribute("position");
+          const colAttr = three.geometry.getAttribute("color");
+          const pos = posAttr.array;
+          const col = colAttr.array;
+          const indices = three.sampleIndices;
+          const weights = three.sampleWeights;
+          const pointCount = indices.length / 4;
+          const lut = SURFACE_GRADIENT_LUT;
+          const missing = SURFACE_MISSING_RGB;
+          const lutSize = SURFACE_LUT_SIZE;
+          
+          for (let i = 0; i < pointCount; i++) {
+              const base4 = i * 4;
+              let sum = 0, wSum = 0;
+              for (let k = 0; k < 4; k++) {
+                  const idx = indices[base4+k];
+                  const w = weights[base4+k];
+                  const v = sensorValues[idx];
+                  if (Number.isFinite(v) && w > 0) {
+                      sum += v * w;
+                      wSum += w;
+                  }
+              }
+              const value = wSum > 0 ? sum/wSum : NaN;
+              const posBase = i * 3;
+              const colBase = i * 3;
+              
+              if (!Number.isFinite(value)) {
+                  pos[posBase + 1] = 0;
+                  col[colBase] = missing[0]; col[colBase+1] = missing[1]; col[colBase+2] = missing[2];
+                  continue;
+              }
+              
+              const clamped = Math.min(max, Math.max(min, value));
+              pos[posBase + 1] = heightScale > 0 ? (clamped - min) * heightScale : 0;
+              const ratio = rangeSpan > 0 ? (clamped - min) / rangeSpan : 0;
+              const lutIdx = Math.max(0, Math.min(lutSize - 1, Math.round(ratio * (lutSize - 1))));
+              const lutBase = lutIdx * 3;
+              col[colBase] = lut[lutBase]; col[colBase+1] = lut[lutBase+1]; col[colBase+2] = lut[lutBase+2];
           }
-          const value = wSum > 0 ? sum / wSum : NaN;
-          const posBase = i * 3;
-          const colBase = i * 3;
-
-          if (!Number.isFinite(value)) {
-            pos[posBase + 1] = 0;
-            col[colBase] = missing[0];
-            col[colBase + 1] = missing[1];
-            col[colBase + 2] = missing[2];
-            continue;
-          }
-
-          const clamped = Math.min(max, Math.max(min, value));
-          pos[posBase + 1] = heightScale > 0 ? (clamped - min) * heightScale : 0;
-
-          const ratio = rangeSpan > 0 ? (clamped - min) / rangeSpan : 0;
-          const lutIdx = Math.max(0, Math.min(lutSize - 1, Math.round(ratio * (lutSize - 1))));
-          const lutBase = lutIdx * 3;
-          col[colBase] = lut[lutBase];
-          col[colBase + 1] = lut[lutBase + 1];
-          col[colBase + 2] = lut[lutBase + 2];
-        }
-
-        posAttr.needsUpdate = true;
-        colAttr.needsUpdate = true;
+          posAttr.needsUpdate = true;
+          colAttr.needsUpdate = true;
+      }
+      
+      // --- Render Orchestration ---
+      
+      window.addEventListener("three-ready", () => {
+          updateAllHeatmaps();
+          requestSurfaceRefresh();
+      });
+      if (window.__three_ready) {
+          updateAllHeatmaps();
+          requestSurfaceRefresh();
       }
 
-      function shouldRequestSurfaceRefreshForDn(dn) {
-        if (!dn) {
-          return false;
+      function arraysEqual(left, right) {
+        if (left.length !== right.length) return false;
+        for (let i = 0; i < left.length; i++) {
+          if (left[i] !== right[i]) return false;
         }
-        return panelContexts.some(
-          (panel) => panelIsActive(panel) && panel.selectedDevice === dn && panel.selectedLayoutKey
-        );
-      }
-
-      function renderPanelSurfaceFast(panel, ctx, range) {
-        if (!panel || !panel.heatmapContainer || !ctx || ctx.state !== "ready") {
-          return false;
-        }
-        if (!threeIsAvailable()) {
-          return false;
-        }
-        const container = panel.heatmapContainer;
-        const three = ensureThreeSurface(panel, ctx.rows, ctx.cols);
-        if (!three) {
-          return false;
-        }
-        if (three.renderer.domElement.parentElement !== container) {
-          container.innerHTML = "";
-          container.appendChild(three.renderer.domElement);
-          container.classList.add("has-3d");
-          three.needsResize = true;
-        }
-        if (three.needsResize || !three.lastWidth || !three.lastHeight) {
-          resizeThreeSurface(panel);
-          three.needsResize = false;
-        }
-        if (!three.lastWidth || !three.lastHeight) {
-          return false;
-        }
-        updateThreeSurface(panel, ctx, range);
-        three.renderer.render(three.scene, three.camera);
         return true;
-      }
-
-      function performSurfaceRefresh() {
-        if (!threeIsAvailable()) {
-          return false;
-        }
-        const panelData = panelContexts.map((panel) => {
-          if (!panelIsActive(panel)) {
-            return { panel, ctx: { state: "inactive" } };
-          }
-          return { panel, ctx: buildPanelRenderContext(panel) };
-        });
-        const mins = panelData
-          .filter(({ ctx }) => ctx && ctx.state === "ready" && Number.isFinite(ctx.dataMin))
-          .map(({ ctx }) => ctx.dataMin);
-        const maxs = panelData
-          .filter(({ ctx }) => ctx && ctx.state === "ready" && Number.isFinite(ctx.dataMax))
-          .map(({ ctx }) => ctx.dataMax);
-        const dataMin = mins.length ? Math.min(...mins) : null;
-        const dataMax = maxs.length ? Math.max(...maxs) : null;
-        const range = resolveEffectiveRange(dataMin, dataMax);
-
-        let rendered = false;
-        panelData.forEach(({ panel, ctx }) => {
-          if (!ctx || ctx.state !== "ready") {
-            return;
-          }
-          panelRenderCache.set(panel.key, ctx);
-          if (renderPanelSurfaceFast(panel, ctx, range)) {
-            rendered = true;
-          }
-          updatePanelSensors(panel);
-          updatePanelCop(panel);
-        });
-        return rendered;
-      }
-
-      function requestSurfaceRefresh() {
-        surfaceDirty = true;
-        surfaceLoopActiveUntil = Math.max(surfaceLoopActiveUntil, performance.now() + SURFACE_LOOP_IDLE_MS);
-        if (surfaceLoopRafId !== null) {
-          return;
-        }
-        surfaceLoopRafId = window.requestAnimationFrame(surfaceLoopTick);
-      }
-
-      function surfaceLoopTick(ts) {
-        if (!surfaceDirty && ts > surfaceLoopActiveUntil) {
-          surfaceLoopRafId = null;
-          return;
-        }
-        surfaceLoopRafId = window.requestAnimationFrame(surfaceLoopTick);
-        if (document.hidden) {
-          return;
-        }
-        if (!surfaceDirty) {
-          return;
-        }
-        surfaceDirty = false;
-        performSurfaceRefresh();
       }
 
       function applyMirroring(values, rows, cols, options = {}) {
         const mirrorRowsFlag = Boolean(options.mirrorRows);
         const mirrorColsFlag = Boolean(options.mirrorCols);
-        // Without full dimensions simply clone the provided values / 没有完整行列信息时直接克隆原始数组
-        if (!rows || !cols) {
-          return values.slice();
-        }
+        if (!rows || !cols) return values.slice();
         const result = [];
         for (let displayRow = 0; displayRow < rows; displayRow += 1) {
-          // Flip row index when mirrorRows is enabled / 启用行镜像时翻转行索引
           const sourceRow = mirrorRowsFlag ? rows - 1 - displayRow : displayRow;
           const start = sourceRow * cols;
           const rowValues = values.slice(start, start + cols);
-          if (mirrorColsFlag) {
-            // Reverse cell order horizontally when requested / 需要列镜像时水平翻转
-            rowValues.reverse();
-          }
+          if (mirrorColsFlag) rowValues.reverse();
           result.push(...rowValues);
         }
         return result;
       }
-
+      
       function persistMirrorSettings(panel) {
-        if (!panel || !panel.selectedDevice) {
-          return;
-        }
-        mirrorSettingsByDevice.set(panel.selectedDevice, {
-          rows: panel.mirrorRows,
-          cols: panel.mirrorCols
-        });
+          if (!panel || !panel.selectedDevice) return;
+          mirrorSettingsByDevice.set(panel.selectedDevice, {
+              rows: panel.mirrorRows,
+              cols: panel.mirrorCols
+          });
       }
-
+      
       function syncPanelMirrorControls(panel) {
-        if (!panel) {
-          return;
-        }
-        const settings = panel.selectedDevice ? mirrorSettingsByDevice.get(panel.selectedDevice) : null;
-        panel.mirrorRows = settings ? Boolean(settings.rows) : false;
-        panel.mirrorCols = settings ? Boolean(settings.cols) : false;
-        if (panel.mirrorRowsToggle) {
+          if (!panel) return;
+          const settings = panel.selectedDevice ? mirrorSettingsByDevice.get(panel.selectedDevice) : null;
+          panel.mirrorRows = settings ? Boolean(settings.rows) : false;
+          panel.mirrorCols = settings ? Boolean(settings.cols) : false;
           panel.mirrorRowsToggle.checked = panel.mirrorRows;
-          panel.mirrorRowsToggle.disabled = !panel.selectedDevice || !panelIsActive(panel);
-        }
-        if (panel.mirrorColsToggle) {
           panel.mirrorColsToggle.checked = panel.mirrorCols;
-          panel.mirrorColsToggle.disabled = !panel.selectedDevice || !panelIsActive(panel);
-        }
+          
+          const disabled = !panel.selectedDevice;
+          panel.mirrorRowsToggle.disabled = disabled;
+          panel.mirrorColsToggle.disabled = disabled;
       }
-
+      
       function setPanelPlaceholder(panel, key) {
-        if (!panel || !panel.heatmapContainer) {
-          return;
-        }
-        panel.heatmapContainer.classList.remove("has-3d");
-        panel.heatmapContainer.innerHTML = `<div class="heatmap-placeholder">${t(key)}</div>`;
+          if (!panel || !panel.heatmapContainer) return;
+          panel.heatmapContainer.classList.remove("has-3d");
+          panel.heatmapContainer.innerHTML = `<div class="heatmap-placeholder">${t(key)}</div>`;
       }
-
+      
       function buildPanelRenderContext(panel) {
-        if (!panelIsActive(panel)) {
-          return { state: "inactive" };
-        }
-        if (!panel || !panel.heatmapContainer) {
-          return { state: "missing" };
-        }
-        if (!panel.selectedDevice) {
-          return { state: "no_device" };
-        }
-        const entry = state.get(panel.selectedDevice);
-        if (!entry) {
-          return { state: "waiting" };
-        }
-        const layout = parseLayoutKey(panel.selectedLayoutKey);
-        if (!layout) {
-          return { state: "no_layout" };
-        }
-        const [rows, cols] = layout;
-        const totalCells = rows * cols;
-        const values = Array.isArray(entry.pressureValues) ? entry.pressureValues.slice(0, totalCells) : [];
-        while (values.length < totalCells) {
-          values.push(NaN);
-        }
-        const displayValues = applyMirroring(values, rows, cols, {
-          mirrorRows: panel.mirrorRows,
-          mirrorCols: panel.mirrorCols
-        });
-        const validValues = values.filter((value) => Number.isFinite(value));
-        const hasValidValues = validValues.length > 0;
-        const dataMin = hasValidValues ? Math.min(...validValues) : null;
-        const dataMax = hasValidValues ? Math.max(...validValues) : null;
-        return {
-          state: "ready",
-          rows,
-          cols,
-          displayValues,
-          dataMin,
-          dataMax
-        };
+          if (!panel.selectedDevice) return { state: "no_device" };
+          const entry = state.get(panel.selectedDevice);
+          if (!entry) return { state: "waiting" };
+          const layout = parseLayoutKey(panel.selectedLayoutKey);
+          if (!layout) return { state: "no_layout" };
+          const [rows, cols] = layout;
+          const totalCells = rows * cols;
+          const values = Array.isArray(entry.pressureValues) ? entry.pressureValues.slice(0, totalCells) : [];
+          while (values.length < totalCells) values.push(NaN);
+          const displayValues = applyMirroring(values, rows, cols, {
+              mirrorRows: panel.mirrorRows,
+              mirrorCols: panel.mirrorCols
+          });
+          const validValues = values.filter(v => Number.isFinite(v));
+          const hasValidValues = validValues.length > 0;
+          const dataMin = hasValidValues ? Math.min(...validValues) : null;
+          const dataMax = hasValidValues ? Math.max(...validValues) : null;
+          return { state: "ready", rows, cols, displayValues, dataMin, dataMax };
       }
-
+      
       function renderPanelHeatmap(panel, ctx, range) {
-        if (!panel || !panel.heatmapContainer) {
-          return;
-        }
-        const container = panel.heatmapContainer;
-        container.classList.remove("has-3d");
-        if (!ctx || ctx.state === "missing") {
-          container.innerHTML = "";
-          return;
-        }
-        if (ctx.state === "inactive") {
-          setPanelPlaceholder(panel, "heatmap.empty.dual_disabled");
-          return;
-        }
-        if (ctx.state !== "ready") {
-          const placeholderKey =
-            ctx.state === "no_device"
-              ? "heatmap.empty.no_device"
-              : ctx.state === "no_layout"
-                ? "heatmap.empty.no_layout"
-                : "heatmap.empty.waiting";
-          setPanelPlaceholder(panel, placeholderKey);
-          return;
-        }
-        if (!threeIsAvailable()) {
-          container.innerHTML = '<div class="heatmap-placeholder">3D 渲染库未加载</div>';
-          return;
-        }
-        const three = ensureThreeSurface(panel, ctx.rows, ctx.cols);
-        if (!three) {
-          container.innerHTML = '<div class="heatmap-placeholder">3D 渲染初始化失败</div>';
-          return;
-        }
-        if (three.renderer.domElement.parentElement !== container) {
-          container.innerHTML = "";
-          container.appendChild(three.renderer.domElement);
-          three.needsResize = true;
-        }
-        container.classList.add("has-3d");
-        resizeThreeSurface(panel);
-        three.needsResize = false;
-        updateThreeSurface(panel, ctx, range);
-        three.controls.update();
-        three.renderer.render(three.scene, three.camera);
+          const container = panel.heatmapContainer;
+          container.classList.remove("has-3d");
+          if (!ctx || ctx.state === "no_device") {
+              setPanelPlaceholder(panel, "heatmap.empty.no_device");
+              return;
+          }
+          if (ctx.state === "waiting") {
+              setPanelPlaceholder(panel, "heatmap.empty.waiting");
+              return;
+          }
+          if (ctx.state === "no_layout") {
+              setPanelPlaceholder(panel, "heatmap.empty.no_layout");
+              return;
+          }
+          if (ctx.state !== "ready") return;
+          
+          if (!threeIsAvailable()) {
+              container.innerHTML = '<div class="heatmap-placeholder">3D Library Not Loaded</div>';
+              return;
+          }
+          
+          const three = ensureThreeSurface(panel, ctx.rows, ctx.cols);
+          if (!three) {
+              container.innerHTML = '<div class="heatmap-placeholder">3D Init Failed</div>';
+              return;
+          }
+          if (three.renderer.domElement.parentElement !== container) {
+              container.innerHTML = "";
+              container.appendChild(three.renderer.domElement);
+              three.needsResize = true;
+          }
+          container.classList.add("has-3d");
+          resizeThreeSurface(panel);
+          three.needsResize = false;
+          updateThreeSurface(panel, ctx, range);
+          three.controls.update();
+          three.renderer.render(three.scene, three.camera);
       }
-
+      
       function updateAllHeatmaps() {
-        const panelData = panelContexts.map((panel) => {
-          if (!panelIsActive(panel)) {
-            return { panel, ctx: { state: "inactive" } };
-          }
-          return { panel, ctx: buildPanelRenderContext(panel) };
-        });
-        const mins = panelData
-          .filter(({ ctx }) => ctx && ctx.state === "ready" && Number.isFinite(ctx.dataMin))
-          .map(({ ctx }) => ctx.dataMin);
-        const maxs = panelData
-          .filter(({ ctx }) => ctx && ctx.state === "ready" && Number.isFinite(ctx.dataMax))
-          .map(({ ctx }) => ctx.dataMax);
-        const dataMin = mins.length ? Math.min(...mins) : null;
-        const dataMax = maxs.length ? Math.max(...maxs) : null;
-        updateRangePlaceholders(dataMin, dataMax);
-        const range = resolveEffectiveRange(dataMin, dataMax);
-        panelData.forEach(({ panel, ctx }) => {
-          panelRenderCache.set(panel.key, ctx);
-          renderPanelHeatmap(panel, ctx, range);
-        });
-        panelContexts.forEach(updatePanelCop);
-      }
-
-      function chooseDefaultDeviceForPanel(panel, devices) {
-        if (panel.selectedDevice && devices.includes(panel.selectedDevice)) {
-          return panel.selectedDevice;
-        }
-        if (panel.key === "secondary") {
-          const primaryDn = primaryPanel?.selectedDevice || null;
-          const alternate = devices.find((dn) => dn !== primaryDn);
-          if (alternate) {
-            return alternate;
-          }
-        }
-        return devices[0] || null;
+          const panelData = panels.map(panel => ({ panel, ctx: buildPanelRenderContext(panel) }));
+          const mins = panelData.filter(d => d.ctx.state === "ready" && Number.isFinite(d.ctx.dataMin)).map(d => d.ctx.dataMin);
+          const maxs = panelData.filter(d => d.ctx.state === "ready" && Number.isFinite(d.ctx.dataMax)).map(d => d.ctx.dataMax);
+          const dataMin = mins.length ? Math.min(...mins) : null;
+          const dataMax = maxs.length ? Math.max(...maxs) : null;
+          
+          updateRangePlaceholders(dataMin, dataMax);
+          const range = resolveEffectiveRange(dataMin, dataMax);
+          
+          panelData.forEach(({ panel, ctx }) => {
+              panelRenderCache.set(panel.key, ctx);
+              renderPanelHeatmap(panel, ctx, range);
+          });
+          panels.forEach(updatePanelCop);
       }
 
       function updateLayoutOptionsForPanel(panel) {
-        if (!panel || !panel.layoutSelector) {
-          return;
-        }
-        if (!panelIsActive(panel)) {
-          panel.layoutSelector.innerHTML = "";
-          panel.layoutSelector.disabled = true;
-          panel.layoutSelector.value = "";
-          panel.selectedLayoutKey = null;
-          if (panel.mirrorRowsToggle) {
-            panel.mirrorRowsToggle.disabled = true;
-            panel.mirrorRowsToggle.checked = false;
+          const entry = panel.selectedDevice ? state.get(panel.selectedDevice) : null;
+          if (!entry) {
+              panel.layoutSelector.innerHTML = "";
+              panel.layoutSelector.disabled = true;
+              panel.selectedLayoutKey = null;
+              panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
+              setPanelPlaceholder(panel, panel.selectedDevice ? "heatmap.empty.waiting" : "heatmap.empty.no_device");
+              updatePanelSensors(panel);
+              updatePanelCop(panel);
+              return;
           }
-          if (panel.mirrorColsToggle) {
-            panel.mirrorColsToggle.disabled = true;
-            panel.mirrorColsToggle.checked = false;
+          const sensorCount = Number.isInteger(entry.sensorCount) ? entry.sensorCount : (entry.pressureValues?.length || 0);
+          const pairs = computeFactorPairs(sensorCount);
+          if (!pairs.length) {
+              panel.layoutSelector.innerHTML = "";
+              panel.layoutSelector.disabled = true;
+              panel.selectedLayoutKey = null;
+              panel.layoutOptionsCache = { dn: entry.dn, sensorCount, options: [], selectedKey: null, lang: currentLanguage };
+              setPanelPlaceholder(panel, "heatmap.empty.no_layout");
+              updatePanelSensors(panel);
+              updatePanelCop(panel);
+              return;
           }
-          panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
-          setPanelPlaceholder(panel, "heatmap.empty.dual_disabled");
+          const optionKeys = pairs.map(([r, c]) => `${r}x${c}`);
+          const optionsChanged = panel.layoutOptionsCache.dn !== entry.dn ||
+                                 !arraysEqual(optionKeys, panel.layoutOptionsCache.options) ||
+                                 panel.layoutOptionsCache.lang !== currentLanguage;
+                                 
+          if (optionsChanged) {
+              panel.layoutSelector.innerHTML = "";
+              pairs.forEach(([r, c]) => {
+                  const key = `${r}x${c}`;
+                  const option = document.createElement("option");
+                  option.value = key;
+                  option.textContent = `${r} × ${c}`;
+                  panel.layoutSelector.appendChild(option);
+              });
+          }
+          
+          if (!panel.selectedLayoutKey || !optionKeys.includes(panel.selectedLayoutKey)) {
+              if (panel.layoutOptionsCache.selectedKey && optionKeys.includes(panel.layoutOptionsCache.selectedKey)) {
+                  panel.selectedLayoutKey = panel.layoutOptionsCache.selectedKey;
+              } else {
+                  panel.selectedLayoutKey = chooseDefaultLayout(pairs);
+              }
+          }
+          panel.layoutSelector.value = panel.selectedLayoutKey || "";
+          panel.layoutSelector.disabled = false;
+          panel.layoutOptionsCache = { dn: entry.dn, sensorCount, options: optionKeys, selectedKey: panel.selectedLayoutKey, lang: currentLanguage };
+          
           updatePanelSensors(panel);
           updatePanelCop(panel);
-          return;
-        }
-        const entry = panel.selectedDevice ? state.get(panel.selectedDevice) : null;
-        if (panel.mirrorRowsToggle) {
-          panel.mirrorRowsToggle.disabled = true;
-        }
-        if (panel.mirrorColsToggle) {
-          panel.mirrorColsToggle.disabled = true;
-        }
-        if (!entry) {
-          panel.layoutSelector.innerHTML = "";
-          panel.layoutSelector.disabled = true;
-          panel.layoutSelector.value = "";
-          panel.selectedLayoutKey = null;
-          panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
-          setPanelPlaceholder(
-            panel,
-            panelIsActive(panel)
-              ? (panel.selectedDevice ? "heatmap.empty.waiting" : "heatmap.empty.no_device")
-              : "heatmap.empty.dual_disabled"
-          );
-          updatePanelSensors(panel);
-          updatePanelCop(panel);
-          return;
-        }
-        const sensorCount = Number.isInteger(entry.sensorCount)
-          ? entry.sensorCount
-          : Array.isArray(entry.pressureValues)
-            ? entry.pressureValues.length
-            : 0;
-        const pairs = computeFactorPairs(sensorCount);
-        if (!pairs.length) {
-          panel.layoutSelector.innerHTML = "";
-          panel.layoutSelector.disabled = true;
-          panel.selectedLayoutKey = null;
-          panel.layoutOptionsCache = { dn: entry.dn, sensorCount, options: [], selectedKey: null, lang: currentLanguage };
-          setPanelPlaceholder(panel, "heatmap.empty.no_layout");
-          updatePanelSensors(panel);
-          updatePanelCop(panel);
-          return;
-        }
-        const optionKeys = pairs.map(([rows, cols]) => `${rows}x${cols}`);
-        const languageChanged = panel.layoutOptionsCache.lang !== currentLanguage;
-        const optionsChanged =
-          panel.layoutOptionsCache.dn !== entry.dn ||
-          panel.layoutOptionsCache.sensorCount !== sensorCount ||
-          !arraysEqual(optionKeys, panel.layoutOptionsCache.options) ||
-          languageChanged;
-        if (optionsChanged) {
-          panel.layoutSelector.innerHTML = "";
-          pairs.forEach(([rows, cols]) => {
-            const key = `${rows}x${cols}`;
-            const option = document.createElement("option");
-            option.value = key;
-            option.textContent = `${rows} × ${cols}`;
-            panel.layoutSelector.appendChild(option);
-          });
-        }
-        if (!panel.selectedLayoutKey || !optionKeys.includes(panel.selectedLayoutKey)) {
-          panel.selectedLayoutKey =
-            panel.layoutOptionsCache.selectedKey && optionKeys.includes(panel.layoutOptionsCache.selectedKey)
-              ? panel.layoutOptionsCache.selectedKey
-              : chooseDefaultLayout(pairs);
-        }
-        panel.layoutSelector.value = panel.selectedLayoutKey || "";
-        panel.layoutSelector.disabled = false;
-        if (panel.mirrorRowsToggle) {
-          panel.mirrorRowsToggle.disabled = false;
-        }
-        if (panel.mirrorColsToggle) {
-          panel.mirrorColsToggle.disabled = false;
-        }
-        syncPanelMirrorControls(panel);
-        panel.layoutOptionsCache = {
-          dn: entry.dn,
-          sensorCount,
-          options: optionKeys,
-          selectedKey: panel.selectedLayoutKey,
-          lang: currentLanguage
-        };
-        updatePanelSensors(panel);
-        updatePanelCop(panel);
       }
-
+      
       function updateDeviceOptions() {
-        const devices = Array.from(state.keys()).sort();
-        return updateDeviceOptionsWithList(devices);
+          const devices = Array.from(state.keys()).sort();
+          let changed = false;
+          panels.forEach(panel => {
+              const previousSelection = panel.selectedDevice;
+              const listChanged = !arraysEqual(devices, panel.deviceOptionsCache.devices);
+              const langChanged = panel.deviceOptionsCache.lang !== currentLanguage;
+              
+              if (listChanged || langChanged) {
+                  panel.deviceSelector.innerHTML = "";
+                  if (!devices.length) {
+                      const opt = document.createElement("option");
+                      opt.value = "";
+                      opt.textContent = t("controls.waiting");
+                      panel.deviceSelector.appendChild(opt);
+                  } else {
+                      devices.forEach(dn => {
+                          const opt = document.createElement("option");
+                          opt.value = dn;
+                          opt.textContent = dn;
+                          panel.deviceSelector.appendChild(opt);
+                      });
+                  }
+              }
+              
+              if (!panel.selectedDevice || !devices.includes(panel.selectedDevice)) {
+                  // If we lost the device, pick a default?
+                  // Try to pick one that isn't selected by others?
+                  const used = panels.map(p => p.selectedDevice).filter(d => d);
+                  const available = devices.filter(d => !used.includes(d));
+                  if (available.length > 0) {
+                      panel.selectedDevice = available[0];
+                  } else if (devices.length > 0 && !devices.includes(panel.selectedDevice)) {
+                      panel.selectedDevice = devices[0];
+                  } else if (devices.length === 0) {
+                      panel.selectedDevice = null;
+                  }
+              }
+              
+              panel.deviceSelector.value = panel.selectedDevice || "";
+              panel.deviceSelector.disabled = devices.length === 0;
+              
+              if (panel.selectedDevice !== previousSelection) {
+                  changed = true;
+                  syncPanelMirrorControls(panel);
+              }
+              panel.deviceOptionsCache = { devices, selected: panel.selectedDevice, lang: currentLanguage };
+              updatePanelSensors(panel);
+              updatePanelCop(panel);
+          });
+          return changed;
       }
-
-      function updateDeviceOptionsWithList(devices) {
-        let changed = false;
-        panelContexts.forEach((panel) => {
-          if (!panel.deviceSelector) {
-            return;
-          }
-          const previousSelection = panel.selectedDevice;
-          const listChanged = !arraysEqual(devices, panel.deviceOptionsCache.devices);
-          const languageChanged = panel.deviceOptionsCache.lang !== currentLanguage;
-          const isActive = panelIsActive(panel);
-          if (!devices.length) {
-            if (listChanged || languageChanged) {
-              panel.deviceSelector.innerHTML = '';
-              const option = document.createElement('option');
-              option.value = '';
-              option.textContent = t('controls.waiting');
-              panel.deviceSelector.appendChild(option);
-            }
-            panel.deviceSelector.disabled = true;
-            panel.deviceSelector.value = '';
-            panel.selectedDevice = null;
-            panel.selectedLayoutKey = null;
-            panel.deviceOptionsCache = { devices, selected: null, lang: currentLanguage };
-            panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
-            syncPanelMirrorControls(panel);
-            setPanelPlaceholder(panel, isActive ? "heatmap.empty.waiting" : "heatmap.empty.dual_disabled");
-            updatePanelSensors(panel);
-            updatePanelCop(panel);
-            changed = true;
-            return;
-          }
-          if (listChanged || languageChanged) {
-            panel.deviceSelector.innerHTML = '';
-            devices.forEach((dn) => {
-              const option = document.createElement('option');
-              option.value = dn;
-              option.textContent = dn;
-              panel.deviceSelector.appendChild(option);
+      
+      function formatAxisReading(value, options = {}) {
+        const scale = options.scale || 1;
+        if (!Number.isFinite(value)) return "--";
+        const scaled = value * scale;
+        const abs = Math.abs(scaled);
+        const decimals = abs < 10 ? 2 : (abs < 100 ? 1 : 0);
+        return scaled.toFixed(decimals);
+      }
+      
+      function updatePanelSensors(panel) {
+        if (!panel.selectedDevice) {
+            ["x","y","z"].forEach(k => {
+                if (panel.gyroElements[k]) panel.gyroElements[k].textContent = "--";
+                if (panel.accElements[k]) panel.accElements[k].textContent = "--";
             });
-          }
-          if (!panel.selectedDevice || !devices.includes(panel.selectedDevice)) {
-            panel.selectedDevice = chooseDefaultDeviceForPanel(panel, devices);
-          }
-          if (panel.deviceSelector.value !== panel.selectedDevice) {
-            panel.deviceSelector.value = panel.selectedDevice || '';
-          }
-          panel.deviceSelector.disabled = !isActive;
-          const selectionChanged = panel.selectedDevice !== previousSelection;
-          panel.deviceOptionsCache = { devices, selected: panel.selectedDevice, lang: currentLanguage };
-          if (selectionChanged) {
-            syncPanelMirrorControls(panel);
-          }
-          if (listChanged || languageChanged || selectionChanged) {
-            changed = true;
-          }
-          updatePanelSensors(panel);
-          updatePanelCop(panel);
+            return;
+        }
+        const entry = state.get(panel.selectedDevice);
+        const gyro = entry?.gyro;
+        ["x", "y", "z"].forEach((axis, idx) => {
+             const v = gyro && Number.isFinite(gyro[idx]) ? gyro[idx] : null;
+             panel.gyroElements[axis].textContent = v !== null ? formatAxisReading(v) : "--";
         });
-        return changed;
+        const acc = entry?.acc;
+         ["x", "y", "z"].forEach((axis, idx) => {
+             const v = acc && Number.isFinite(acc[idx]) ? acc[idx] : null;
+             panel.accElements[axis].textContent = v !== null ? formatAxisReading(v, {scale: 9.8}) : "--";
+        });
+      }
+      
+      function updatePanelCop(panel) {
+          if (!panel.copBoard) return;
+          if (!copVisible) {
+             // Already handled by CSS class toggle, but good to bail
+             return; 
+          }
+          const ctx = panelRenderCache.get(panel.key);
+          const board = panel.copBoard;
+          const dot = panel.copDot;
+          
+          if (!ctx || ctx.state !== "ready" || !Array.isArray(ctx.displayValues)) {
+             board.classList.remove("has-data");
+             if (dot) { dot.style.left = "50%"; dot.style.top = "50%"; }
+             if (panel.copXValue) panel.copXValue.textContent = "--";
+             if (panel.copYValue) panel.copYValue.textContent = "--";
+             if (panel.copPlaceholder) panel.copPlaceholder.textContent = t("overview.cop_empty");
+             return;
+          }
+          
+          const { rows, cols, displayValues } = ctx;
+          let total = 0, sumX = 0, sumY = 0;
+          const OFFSET = 250;
+          displayValues.forEach((v, i) => {
+              if (Number.isFinite(v)) {
+                  const adj = v - OFFSET;
+                  if (adj <= 0) return;
+                  const r = Math.floor(i / cols);
+                  const c = i % cols;
+                  total += adj;
+                  sumX += adj * c;
+                  sumY += adj * r;
+              }
+          });
+          
+          if (total <= 0) {
+             board.classList.remove("has-data");
+             if (panel.copXValue) panel.copXValue.textContent = "--";
+             if (panel.copYValue) panel.copYValue.textContent = "--";
+             if (panel.copPlaceholder) panel.copPlaceholder.textContent = t("overview.cop_empty");
+             return;
+          }
+          
+          const copX = sumX / total;
+          const copY = sumY / total;
+          if (panel.copXValue) panel.copXValue.textContent = copX.toFixed(2);
+          if (panel.copYValue) panel.copYValue.textContent = copY.toFixed(2);
+          
+          const colMax = Math.max(cols - 1, 1);
+          const rowMax = Math.max(rows - 1, 1);
+          const centerX = (cols - 1) / 2;
+          const centerY = (rows - 1) / 2;
+          const halfX = colMax / 2;
+          const halfY = rowMax / 2;
+          
+          let xRatio = (copX - (centerX - halfX)) / colMax;
+          let yRatio = (copY - (centerY - halfY)) / rowMax;
+          xRatio = Math.min(1, Math.max(0, xRatio));
+          yRatio = Math.min(1, Math.max(0, yRatio));
+          
+          board.classList.add("has-data");
+          if (dot) {
+              dot.style.left = `${xRatio * 100}%`;
+              dot.style.top = `${yRatio * 100}%`;
+          }
       }
 
-      // --- Dashboard summary (active devices only) ---
-      // --- 仪表盘概要：仅展示活跃设备 ---
       function updateSummary() {
-        // Aggregate active device count based on freshness / 根据数据新鲜度统计活跃设备数量
         const now = Date.now();
         let active = 0;
         for (const entry of state.values()) {
-          // Treat entries newer than threshold as active / 将未超过过期阈值的记录视作活跃
-          if (entry.receivedAt && now - entry.receivedAt <= STALE_THRESHOLD_MS) {
-            active += 1;
-          }
+          if (entry.receivedAt && now - entry.receivedAt <= STALE_THRESHOLD_MS) active++;
         }
-        if (activeDevicesLabel) {
-          activeDevicesLabel.textContent = active;
-        }
+        if (activeDevicesLabel) activeDevicesLabel.textContent = active;
       }
-
-      function formatAxisReading(value, options = {}) {
-        const scale = Number.isFinite(options.scale) ? options.scale : 1;
-        if (!Number.isFinite(value)) {
-          return "--";
-        }
-        const scaled = value * scale;
-        const abs = Math.abs(scaled);
-        let decimals = 0;
-        if (abs < 10) {
-          decimals = 2;
-        } else if (abs < 100) {
-          decimals = 1;
-        } else {
-          decimals = 0;
-        }
-        return scaled.toFixed(decimals);
-      }
-
-      function updatePanelSensors(panel) {
-        if (!panel) {
-          return;
-        }
-        const active = panelIsActive(panel);
-        const entry = active && panel.selectedDevice ? state.get(panel.selectedDevice) : null;
-        const gyro = entry && Array.isArray(entry.gyro) ? entry.gyro : null;
-        ["x", "y", "z"].forEach((axis, idx) => {
-          const el = panel.gyroElements?.[axis];
-          if (el) {
-            el.textContent =
-              gyro && Number.isFinite(gyro[idx]) ? formatAxisReading(gyro[idx]) : "--";
-          }
-        });
-        const acc = entry && Array.isArray(entry.acc) ? entry.acc : null;
-        ["x", "y", "z"].forEach((axis, idx) => {
-          const el = panel.accElements?.[axis];
-          if (el) {
-            el.textContent =
-              acc && Number.isFinite(acc[idx])
-                ? formatAxisReading(acc[idx], { scale: 9.8 })
-                : "--";
-          }
-        });
-      }
-
-      function updatePanelCop(panel) {
-        if (!panel || !panel.copBoard) {
-          return;
-        }
-        const board = panel.copBoard;
-        const dot = panel.copDot;
-        const xValue = panel.copXValue;
-        const yValue = panel.copYValue;
-        const active = panelIsActive(panel);
-        const ctx = panelRenderCache.get(panel.key);
-        if (!active) {
-          board.classList.remove("has-data");
-          if (dot) {
-            dot.style.left = "50%";
-            dot.style.top = "50%";
-          }
-          if (xValue) {
-            xValue.textContent = "--";
-          }
-          if (yValue) {
-            yValue.textContent = "--";
-          }
-          if (panel.copPlaceholder) {
-            panel.copPlaceholder.textContent = t("heatmap.empty.dual_disabled");
-          }
-          return;
-        }
-        if (!ctx || ctx.state !== "ready" || !Array.isArray(ctx.displayValues)) {
-          board.classList.remove("has-data");
-          if (dot) {
-            dot.style.left = "50%";
-            dot.style.top = "50%";
-          }
-          if (xValue) xValue.textContent = "--";
-          if (yValue) yValue.textContent = "--";
-          if (panel.copPlaceholder) {
-            panel.copPlaceholder.textContent = t("overview.cop_empty");
-          }
-          return;
-        }
-        const { rows, cols, displayValues } = ctx;
-        let total = 0;
-        let sumX = 0;
-        let sumY = 0;
-        const OFFSET = 250;
-        displayValues.forEach((value, idx) => {
-          if (Number.isFinite(value)) {
-            const adjusted = value - OFFSET;
-            if (adjusted <= 0) {
-              return;
-            }
-            const row = Math.floor(idx / cols);
-            const col = idx % cols;
-            total += adjusted;
-            sumX += adjusted * col;
-            sumY += adjusted * row;
-          }
-        });
-        if (!Number.isFinite(total) || total <= 0) {
-          board.classList.remove("has-data");
-          if (xValue) xValue.textContent = "--";
-          if (yValue) yValue.textContent = "--";
-          if (panel.copPlaceholder) {
-            panel.copPlaceholder.textContent = t("overview.cop_empty");
-          }
-          return;
-        }
-        const copX = sumX / total;
-        const copY = sumY / total;
-        if (xValue) {
-          xValue.textContent = copX.toFixed(2);
-        }
-        if (yValue) {
-          yValue.textContent = copY.toFixed(2);
-        }
-        const colMax = Math.max(cols - 1, 1);
-        const rowMax = Math.max(rows - 1, 1);
-        const centerX = (cols - 1) / 2;
-        const centerY = (rows - 1) / 2;
-        const halfRangeX = colMax / 2;
-        const halfRangeY = rowMax / 2;
-        const leftBound = centerX - halfRangeX;
-        const rightBound = centerX + halfRangeX;
-        const topBound = centerY - halfRangeY;
-        const bottomBound = centerY + halfRangeY;
-        let xRatio =
-          rightBound - leftBound === 0 ? 0.5 : (copX - leftBound) / (rightBound - leftBound);
-        let yRatio =
-          bottomBound - topBound === 0 ? 0.5 : (copY - topBound) / (bottomBound - topBound);
-        xRatio = Math.min(1, Math.max(0, xRatio));
-        yRatio = Math.min(1, Math.max(0, yRatio));
-        board.classList.add("has-data");
-        if (dot) {
-          dot.style.left = `${xRatio * 100}%`;
-          dot.style.top = `${yRatio * 100}%`;
-        }
-      }
-
-      function updateLastUpdateIndicator() {
-        // Find latest received timestamp across devices / 查找所有设备中最新的接收时间
-        const latest = Array.from(state.values()).reduce(
-          (max, entry) => Math.max(max, entry.receivedAt || 0),
-          0
-        );
-        if (lastUpdateLabel) {
-          lastUpdateLabel.textContent = latest ? new Date(latest).toLocaleString() : "--";
-        }
-      }
-
-      function performRefresh() {
-        // Reset pending flag before running heavy updates / 在执行耗时刷新前先复位待刷新标记
-        pendingRefresh = false;
-        lastRefreshTimestamp = Date.now();
-        updateSummary();
-        updateTable();
-        const deviceChanged = updateDeviceOptions();
-        panelContexts.forEach((panel) => {
-          if (deviceChanged || panel.selectedDevice) {
-            updateLayoutOptionsForPanel(panel);
-          }
-        });
-        panelContexts.forEach(updatePanelSensors);
-        updateAllHeatmaps();
-        updateLastUpdateIndicator();
-      }
-
-      function refreshUI() {
-        // Debounce expensive refresh cascades / 对昂贵的刷新过程做防抖
-        pendingRefresh = true;
-        if (refreshTimerId !== null) {
-          return;
-        }
-        const now = Date.now();
-        const elapsed = now - lastRefreshTimestamp;
-        const delay = Math.max(REFRESH_INTERVAL_MS - elapsed, 0);
-        refreshTimerId = window.setTimeout(() => {
-          refreshTimerId = null;
-          if (!pendingRefresh) {
-            return;
-          }
-          // Execute deferred refresh when timer fires / 定时器触发后执行延迟刷新
-          performRefresh();
-        }, delay);
-      }
-
+      
       function updateTable() {
         const tbody = document.querySelector("#device-table tbody");
         const now = Date.now();
-        // Sort by DN for predictable ordering (locale aware when possible) / 优先按 DN 排序（可用时采用本地化比较）
-        const rows = Array.from(state.values()).sort((a, b) => {
-          if (a.dn && b.dn && a.dn.localeCompare) {
-            return a.dn.localeCompare(b.dn, undefined, { numeric: true, sensitivity: "base" });
-          }
-          if (a.dn < b.dn) return -1;
-          if (a.dn > b.dn) return 1;
-          return 0;
-        });
+        const rows = Array.from(state.values()).sort((a, b) => (a.dn || "").localeCompare(b.dn || ""));
         tbody.innerHTML = "";
         const stopLabel = t("table.actions.stop_tracking");
         for (const entry of rows) {
-          const tr = document.createElement("tr");
-          const isStale = !entry.receivedAt || now - entry.receivedAt > STALE_THRESHOLD_MS;
-          if (isStale) {
-            // Gray out rows that haven't updated recently / 将长时间未更新的行置灰
-            tr.classList.add("text-muted");
-          }
-          // Format row markup including action button / 生成包含操作按钮的行内容
-          tr.innerHTML = `
-            <td><code>${entry.dn}</code></td>
-            <td>${entry.sensorCount ?? "--"}</td>
-            <td>${entry.frameTime ? new Date(entry.frameTime).toLocaleString() : "--"}</td>
-            <td>${entry.receivedAt ? new Date(entry.receivedAt).toLocaleString() : "--"}</td>
-            <td class="text-center">
-              <button type="button" class="btn btn-sm btn-outline-danger remove-device" data-dn="${entry.dn}">${stopLabel}</button>
-            </td>
-          `;
-          const removeButton = tr.querySelector(".remove-device");
-          if (removeButton) {
-            removeButton.addEventListener("click", (event) => {
-              // Stop click from selecting row, then purge device / 阻止事件冒泡后移除该设备
-              event.stopPropagation();
-              removeDevice(entry.dn);
+            const tr = document.createElement("tr");
+            const isStale = !entry.receivedAt || now - entry.receivedAt > STALE_THRESHOLD_MS;
+            if (isStale) tr.classList.add("text-muted");
+            tr.innerHTML = `
+              <td><code>${entry.dn}</code></td>
+              <td>${entry.sensorCount ?? "--"}</td>
+              <td>${entry.frameTime ? new Date(entry.frameTime).toLocaleString() : "--"}</td>
+              <td>${entry.receivedAt ? new Date(entry.receivedAt).toLocaleString() : "--"}</td>
+              <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger remove-device" data-dn="${entry.dn}">${stopLabel}</button>
+              </td>
+            `;
+            tr.querySelector(".remove-device").addEventListener("click", (e) => {
+                e.stopPropagation();
+                removeDevice(entry.dn);
             });
-            removeButton.setAttribute("title", stopLabel);
-          }
-          tbody.appendChild(tr);
+            tbody.appendChild(tr);
         }
       }
-
+      
       function removeDevice(dn) {
-        // Ignore requests for unknown devices / 忽略未知设备的移除请求
-        if (!state.has(dn)) {
-          return;
-        }
-        // Drop device state and any cached mirror preferences / 删除设备状态及其镜像偏好
-        state.delete(dn);
-        mirrorSettingsByDevice.delete(dn);
-        panelContexts.forEach((panel) => {
-          if (panel.selectedDevice === dn) {
-            panel.selectedDevice = null;
-            panel.selectedLayoutKey = null;
-            panel.deviceOptionsCache.selected = null;
-            panel.layoutOptionsCache = { dn: null, sensorCount: null, options: [], selectedKey: null, lang: currentLanguage };
-            if (panel.deviceSelector) {
-              panel.deviceSelector.value = "";
-            }
-            if (panel.layoutSelector) {
-              panel.layoutSelector.innerHTML = "";
-              panel.layoutSelector.disabled = true;
-            }
-            syncPanelMirrorControls(panel);
-            setPanelPlaceholder(panel, panelIsActive(panel) ? "heatmap.empty.no_device" : "heatmap.empty.dual_disabled");
-            panelRenderCache.delete(panel.key);
-            updatePanelSensors(panel);
-            updatePanelCop(panel);
-          }
-        });
-        // Trigger full UI refresh so dropdown + table update / 触发整体刷新以更新下拉与表格
-        refreshUI();
+          if (!state.has(dn)) return;
+          state.delete(dn);
+          mirrorSettingsByDevice.delete(dn);
+          panels.forEach(p => {
+              if (p.selectedDevice === dn) {
+                  p.selectedDevice = null;
+                  p.selectedLayoutKey = null;
+                  updateLayoutOptionsForPanel(p);
+              }
+          });
+          refreshUI();
       }
 
+      function performRefresh() {
+          pendingRefresh = false;
+          lastRefreshTimestamp = Date.now();
+          updateSummary();
+          updateTable();
+          const devChanged = updateDeviceOptions();
+          panels.forEach(p => {
+              if (devChanged || p.selectedDevice) updateLayoutOptionsForPanel(p);
+          });
+          updateAllHeatmaps();
+          if (lastUpdateLabel) {
+             const latest = Array.from(state.values()).reduce((m, e) => Math.max(m, e.receivedAt || 0), 0);
+             lastUpdateLabel.textContent = latest ? new Date(latest).toLocaleString() : "--";
+          }
+      }
+      
+      function refreshUI() {
+          pendingRefresh = true;
+          if (refreshTimerId !== null) return;
+          const now = Date.now();
+          const elapsed = now - lastRefreshTimestamp;
+          const delay = Math.max(REFRESH_INTERVAL_MS - elapsed, 0);
+          refreshTimerId = window.setTimeout(() => {
+              refreshTimerId = null;
+              if (pendingRefresh) performRefresh();
+          }, delay);
+      }
+      
+      function requestSurfaceRefresh() {
+          surfaceDirty = true;
+          surfaceLoopActiveUntil = Math.max(surfaceLoopActiveUntil, performance.now() + SURFACE_LOOP_IDLE_MS);
+          if (surfaceLoopRafId === null) surfaceLoopRafId = window.requestAnimationFrame(surfaceLoopTick);
+      }
+      
+      function surfaceLoopTick(ts) {
+          if (!surfaceDirty && ts > surfaceLoopActiveUntil) {
+              surfaceLoopRafId = null;
+              return;
+          }
+          surfaceLoopRafId = window.requestAnimationFrame(surfaceLoopTick);
+          if (!surfaceDirty || document.hidden) return;
+          surfaceDirty = false;
+          
+          const panelData = panels.map(panel => ({ panel, ctx: buildPanelRenderContext(panel) }));
+          const mins = panelData.filter(d => d.ctx.state === "ready" && Number.isFinite(d.ctx.dataMin)).map(d => d.ctx.dataMin);
+          const maxs = panelData.filter(d => d.ctx.state === "ready" && Number.isFinite(d.ctx.dataMax)).map(d => d.ctx.dataMax);
+          const dataMin = mins.length ? Math.min(...mins) : null;
+          const dataMax = maxs.length ? Math.max(...maxs) : null;
+          const range = resolveEffectiveRange(dataMin, dataMax);
+          
+          panelData.forEach(({ panel, ctx }) => {
+              panelRenderCache.set(panel.key, ctx);
+              renderPanelHeatmap(panel, ctx, range);
+              updatePanelSensors(panel);
+              updatePanelCop(panel);
+          });
+      }
+
+      function shouldRequestSurfaceRefreshForDn(dn) {
+          return panels.some(p => p.selectedDevice === dn && p.selectedLayoutKey);
+      }
+
+      // --- Data Ingestion ---
       function normalizeEntry(entry) {
-        // Validate payload shape before processing / 在处理前确认负载结构
-        if (!entry || typeof entry !== "object") {
-          return null;
-        }
+        if (!entry || typeof entry !== "object") return null;
         const dn = entry.dn || "UNKNOWN";
         const payload = entry.payload || {};
-        let pressureSum = null;
         let sensorCount = null;
         let frameTime = null;
         let pressureValues = [];
         let gyroValues = null;
         let accValues = null;
+        
         if (payload && typeof payload === "object") {
-          const rawPressures = Array.isArray(payload.p) ? payload.p : [];
-          // Coerce every reading into a number (or NaN) / 将每个读数转成数字（或 NaN）
-          const numericPressures = rawPressures.map((value) => {
-            const num = Number(value);
-            return Number.isFinite(num) ? num : NaN;
-          });
-          const declaredCount = Number(payload.sn);
-          if (Number.isInteger(declaredCount) && declaredCount > 0) {
-            sensorCount = declaredCount;
-          } else {
-            sensorCount = numericPressures.length;
-          }
-          pressureValues = numericPressures.slice(0, sensorCount);
-          while (pressureValues.length < sensorCount) {
-            // Pad with NaN if payload shorter than declared count / 当数据不足时用 NaN 补齐
-            pressureValues.push(NaN);
-          }
-          // Sum only valid numeric pressures / 仅累加有效的压力值
-          pressureSum = pressureValues.reduce(
-            (acc, value) => acc + (Number.isFinite(value) ? value : 0),
-            0
-          );
-          if (payload.ts) {
-            frameTime = payload.ts * 1000;
-          }
-          if (Array.isArray(payload.gyro)) {
-            const numericGyro = payload.gyro.map((value) => {
-              const num = Number(value);
-              return Number.isFinite(num) ? num : NaN;
-            });
-            gyroValues = [
-              Number.isFinite(numericGyro[0]) ? numericGyro[0] : NaN,
-              Number.isFinite(numericGyro[1]) ? numericGyro[1] : NaN,
-              Number.isFinite(numericGyro[2]) ? numericGyro[2] : NaN
-            ];
-          }
-          if (Array.isArray(payload.acc)) {
-            const numericAcc = payload.acc.map((value) => {
-              const num = Number(value);
-              return Number.isFinite(num) ? num : NaN;
-            });
-            accValues = [
-              Number.isFinite(numericAcc[0]) ? numericAcc[0] : NaN,
-              Number.isFinite(numericAcc[1]) ? numericAcc[1] : NaN,
-              Number.isFinite(numericAcc[2]) ? numericAcc[2] : NaN
-            ];
-          }
+             const rawP = Array.isArray(payload.p) ? payload.p : [];
+             const numP = rawP.map(v => { const n = Number(v); return Number.isFinite(n) ? n : NaN; });
+             sensorCount = Number(payload.sn);
+             if (!Number.isInteger(sensorCount) || sensorCount <= 0) sensorCount = numP.length;
+             pressureValues = numP.slice(0, sensorCount);
+             while (pressureValues.length < sensorCount) pressureValues.push(NaN);
+             if (payload.ts) frameTime = payload.ts * 1000;
+             
+             if (Array.isArray(payload.gyro)) {
+                 const g = payload.gyro.map(Number);
+                 gyroValues = [g[0], g[1], g[2]];
+             }
+             if (Array.isArray(payload.acc)) {
+                 const a = payload.acc.map(Number);
+                 accValues = [a[0], a[1], a[2]];
+             }
         }
-        const receivedAt = entry.received_at ? Date.parse(entry.received_at) : Date.now();
         return {
-          dn,
-          pressureSum,
-          sensorCount,
-          frameTime,
-          receivedAt,
-          pressureValues,
-          gyro: gyroValues,
-          acc: accValues,
-          raw: entry
+            dn, sensorCount, frameTime,
+            receivedAt: entry.received_at ? Date.parse(entry.received_at) : Date.now(),
+            pressureValues, gyro: gyroValues, acc: accValues, raw: entry
         };
       }
-
+      
       function applyEntry(entry, options = {}) {
-        // Normalize raw payload into canonical shape / 将原始负载转换成规范结构
-        const normalized = normalizeEntry(entry);
-        if (!normalized) return;
-        state.set(normalized.dn, normalized);
-        if (!options.defer && shouldRequestSurfaceRefreshForDn(normalized.dn)) {
-          requestSurfaceRefresh();
-        }
-        if (options.defer) {
-          // Caller requested to batch updates, so bail / 调用方要求延迟刷新则直接返回
-          return;
-        }
-        // Immediate refresh keeps UI responsive / 立即刷新可保持界面响应
-        refreshUI();
+          const normalized = normalizeEntry(entry);
+          if (!normalized) return;
+          state.set(normalized.dn, normalized);
+          if (!options.defer && shouldRequestSurfaceRefreshForDn(normalized.dn)) {
+              requestSurfaceRefresh();
+          }
+          if (!options.defer) refreshUI();
       }
-
-      // Fetch periodic snapshots to guard against SSE hiccups.
-      // 轮询获取快照，防止 SSE 偶发中断导致数据落后。
+      
       async function fetchSnapshot() {
-        try {
-          // Pull latest dataset from bridge REST endpoint / 通过桥接 REST 接口拉取最新数据集
-          const resp = await fetch(SNAPSHOT_ENDPOINT);
-          const data = await resp.json();
-          if (Array.isArray(data.data)) {
-            // Reuse applyEntry for each snapshot item, deferring refresh for batching / 复用 applyEntry 处理每条快照，并延迟刷新以批量更新
-            data.data.forEach((item) => applyEntry(item, { defer: true }));
-            refreshUI();
+          try {
+              const resp = await fetch(SNAPSHOT_ENDPOINT);
+              const data = await resp.json();
+              if (Array.isArray(data.data)) {
+                  data.data.forEach(item => applyEntry(item, { defer: true }));
+                  refreshUI();
+              }
+              setStatusIndicator("snapshot_ok");
+              statusIndicator.className = "badge bg-success d-block";
+          } catch (err) {
+              setStatusIndicator("snapshot_error");
+              statusIndicator.className = "badge bg-danger d-block";
+              console.error(t("console.snapshot_fetch_failed"), err);
           }
-          // Mark snapshot state as healthy and colorize indicator / 将快照状态标记为正常并更新指示器颜色
-          setStatusIndicator("snapshot_ok");
-          if (statusIndicator) {
-            statusIndicator.classList.remove("bg-secondary", "bg-danger");
-            statusIndicator.classList.add("bg-success");
+      }
+      
+      function cleanupEventSource() {
+          if (currentEventSource) {
+              currentEventSource.close();
+              currentEventSource = null;
           }
-        } catch (err) {
-          // Network or parsing failures push indicator to error state / 网络或解析失败将状态切换为错误
-          setStatusIndicator("snapshot_error");
-          if (statusIndicator) {
-            statusIndicator.classList.remove("bg-secondary", "bg-success");
-            statusIndicator.classList.add("bg-danger");
-          }
-          console.error(t("console.snapshot_fetch_failed"), err);
+      }
+      function clearStreamReconnectTimer() {
+        if (streamReconnectTimerId !== null) {
+          window.clearTimeout(streamReconnectTimerId);
+          streamReconnectTimerId = null;
         }
       }
+      function scheduleStreamReconnect() {
+        if (streamReconnectTimerId !== null) return;
+        const delay = Math.min(
+          STREAM_RECONNECT_BASE_DELAY_MS * Math.max(1, Math.pow(2, streamReconnectAttempts)),
+          STREAM_RECONNECT_MAX_DELAY_MS
+        );
+        streamReconnectTimerId = window.setTimeout(() => {
+          streamReconnectTimerId = null;
+          streamReconnectAttempts++;
+          subscribeStream();
+        }, delay);
+      }
 
-      // Subscribe to bridge SSE stream for near real-time updates.
-      // 订阅桥接 SSE 流，实现准实时更新。
       function subscribeStream() {
-        // Reset previous SSE connection before opening a new one / 新建 SSE 连接前先清理旧实例
-        cleanupEventSource();
-        clearStreamReconnectTimer();
-        const source = new EventSource(STREAM_ENDPOINT);
-        currentEventSource = source;
-        setStatusIndicator("connecting");
-        if (statusIndicator) {
-          statusIndicator.classList.remove("bg-success", "bg-danger", "bg-warning");
-          statusIndicator.classList.add("bg-secondary");
-        }
-        source.addEventListener("snapshot", (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            if (Array.isArray(payload.data)) {
-              // Snapshot events refresh entire dataset / snapshot 事件刷新整套数据
-              payload.data.forEach((item) => applyEntry(item, { defer: true }));
-              refreshUI();
-            }
-          } catch (err) {
-            console.error(t("console.snapshot_event_error"), err);
-          }
-        });
-        source.addEventListener("update", (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            // Update events only touch single device / update 事件通常只更新单个设备
-            applyEntry(payload);
-          } catch (err) {
-            console.error(t("console.update_event_error"), err);
-          }
-        });
-        source.addEventListener("error", () => {
-          // Switch indicator to warning and attempt graceful recovery / 将指示器切为警告并尝试恢复
-          setStatusIndicator("stream_error");
-          if (statusIndicator) {
-            statusIndicator.classList.remove("bg-success");
-            statusIndicator.classList.add("bg-warning");
-          }
           cleanupEventSource();
-          const shouldFetchSnapshot = streamReconnectTimerId === null;
-          scheduleStreamReconnect();
-          if (shouldFetchSnapshot) {
-            // Kick off snapshot fetch so UI doesn't stagnate / 触发快照抓取避免界面停滞
-            fetchSnapshot();
-          }
-        });
-        source.onopen = () => {
-          // Connected successfully; reset backoff and mark success / 连接成功后重置退避并标为成功
           clearStreamReconnectTimer();
-          streamReconnectAttempts = 0;
-          setStatusIndicator("stream_ok");
-          if (statusIndicator) {
-            statusIndicator.classList.remove("bg-secondary", "bg-danger", "bg-warning");
-            statusIndicator.classList.add("bg-success");
-          }
-        };
+          const source = new EventSource(STREAM_ENDPOINT);
+          currentEventSource = source;
+          setStatusIndicator("connecting");
+          statusIndicator.className = "badge bg-secondary d-block";
+          
+          source.addEventListener("snapshot", (e) => {
+              try {
+                  const payload = JSON.parse(e.data);
+                  if (Array.isArray(payload.data)) {
+                      payload.data.forEach(item => applyEntry(item, {defer: true}));
+                      refreshUI();
+                  }
+              } catch(err) { console.error(err); }
+          });
+          source.addEventListener("update", (e) => {
+              try {
+                  applyEntry(JSON.parse(e.data));
+              } catch(err) { console.error(err); }
+          });
+          source.addEventListener("error", () => {
+              setStatusIndicator("stream_error");
+              statusIndicator.className = "badge bg-warning d-block";
+              cleanupEventSource();
+              const shouldFetch = streamReconnectTimerId === null;
+              scheduleStreamReconnect();
+              if (shouldFetch) fetchSnapshot();
+          });
+          source.onopen = () => {
+              clearStreamReconnectTimer();
+              streamReconnectAttempts = 0;
+              setStatusIndicator("stream_ok");
+              statusIndicator.className = "badge bg-success d-block";
+          };
       }
-
-      applyLanguage();
-      performRefresh();
+      
+      // Init
       fetchSnapshot();
-      if (snapshotPollTimerId === null) {
-        snapshotPollTimerId = window.setInterval(fetchSnapshot, SNAPSHOT_POLL_INTERVAL_MS);
-      }
+      if (snapshotPollTimerId === null) snapshotPollTimerId = window.setInterval(fetchSnapshot, SNAPSHOT_POLL_INTERVAL_MS);
       let resizeRafId = null;
       window.addEventListener("resize", () => {
-        if (resizeRafId !== null) {
-          return;
-        }
-        resizeRafId = window.requestAnimationFrame(() => {
-          resizeRafId = null;
-          panelContexts.forEach((panel) => {
-            if (!panel?.three || !panel?.heatmapContainer?.classList.contains("has-3d")) {
-              return;
-            }
-            resizeThreeSurface(panel);
-            panel.three.needsResize = false;
-            panel.three.renderer.render(panel.three.scene, panel.three.camera);
+          if (resizeRafId !== null) return;
+          resizeRafId = window.requestAnimationFrame(() => {
+              resizeRafId = null;
+              panels.forEach(panel => {
+                  if (panel.three && panel.heatmapContainer.classList.contains("has-3d")) {
+                      resizeThreeSurface(panel);
+                      panel.three.renderer.render(panel.three.scene, panel.three.camera);
+                  }
+              });
           });
-        });
       });
       window.addEventListener("beforeunload", () => {
-        cleanupEventSource();
-        clearStreamReconnectTimer();
-        if (snapshotPollTimerId !== null) {
-          window.clearInterval(snapshotPollTimerId);
-          snapshotPollTimerId = null;
-        }
+          cleanupEventSource();
+          clearStreamReconnectTimer();
+          if (snapshotPollTimerId !== null) window.clearInterval(snapshotPollTimerId);
       });
       subscribeStream();
+
     </script>
   </body>
 </html>
