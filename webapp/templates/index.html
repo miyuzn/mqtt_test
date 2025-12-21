@@ -24,9 +24,6 @@
       <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
           <h1 class="h3 mb-1" data-i18n="header.title">Real-Time Pressure Dashboard</h1>
-          <p class="text-muted mb-0">
-            <span data-i18n="header.data_source">Data source:</span> <code>{{ bridge_api_base }}</code>
-          </p>
         </div>
         <div class="text-md-end">
           <div class="btn-group btn-group-sm language-switcher mb-2" role="group" id="language-switcher">
@@ -579,8 +576,12 @@
         }
         const pairs = [];
         basePairs.forEach(([rows, cols]) => {
-          pairs.push([rows, cols]);
-          if (rows !== cols) pairs.push([cols, rows]);
+          if (rows <= 12 && cols <= 12) {
+            pairs.push([rows, cols]);
+          }
+          if (rows !== cols && cols <= 12 && rows <= 12) {
+            pairs.push([cols, rows]);
+          }
         });
         pairs.sort((a, b) => {
           const diffA = Math.abs(a[0] - a[1]);
