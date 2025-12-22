@@ -1076,9 +1076,68 @@
           panel.heatmapContainer.innerHTML = `<div class="heatmap-placeholder">${t(key)}</div>`;
       }
       
+      function lerp(start, end, t) {
+          if (!Number.isFinite(start) || !Number.isFinite(end)) return end;
+          return start + (end - start) * Math.max(0, Math.min(1, t));
+      }
+
+      function lerpArray(startArr, endArr, t) {
+          if (!startArr || !endArr || startArr.length !== endArr.length) return endArr;
+          return startArr.map((v, i) => lerp(v, endArr[i], t));
+      }
+
+      function getInterpolatedState(dn) {
+          const entry = state.get(dn);
+          if (!entry || !entry.lastState) return entry;
+
+          const now = Date.now();
+          // Assume 50Hz (20ms) data rate, interpolate over this window
+          // Or use the actual time difference between frames if available/reliable
+          // Using a fixed small window for smoothing feels better for "gap filling"
+          
+          // However, for "missing data" we want to smooth over the gap. 
+          // If we receive data at T1 and T2, we want to animate from V1 to V2.
+          // But we only receive V2 at T2. So we are always "lagging" by the interpolation window.
+          // For real-time monitoring without artificial delay, we can only interpolate 
+          // if we intentionally buffer.
+          // BUT, user asked to "fill frames". 
+          // A common simple trick: 
+          // When V2 arrives, don't jump to it. Animate towards it.
+          // This requires a separate "renderState" that chases "targetState".
+          
+          return entry; // Placeholder for now, switching strategy below
+      }
+      
+      // Strategy Switch: "Chasing" Value Interpolation
+      // We maintain a separate 'displayState' for each device that chases the latest 'networkState' (state.get(dn))
+      const displayStates = new Map();
+      const LERP_FACTOR = 0.2; // Adjust for smoothness (lower = smoother/slower)
+
+      function getDisplayState(dn) {
+          const target = state.get(dn);
+          if (!target) return null;
+          
+          let current = displayStates.get(dn);
+          if (!current) {
+              // First frame, jump directly
+              current = { ...target };
+              displayStates.set(dn, current);
+              return current;
+          }
+          
+          // LERP pressure values
+          current.pressureValues = lerpArray(current.pressureValues, target.pressureValues, LERP_FACTOR);
+          
+          // LERP IMU if needed (optional, might be too jittery if LERP'd)
+          if (target.gyro) current.gyro = lerpArray(current.gyro || [0,0,0], target.gyro, LERP_FACTOR);
+          if (target.acc) current.acc = lerpArray(current.acc || [0,0,0], target.acc, LERP_FACTOR);
+          
+          return current;
+      }
+      
       function buildPanelRenderContext(panel) {
           if (!panel.selectedDevice) return { state: "no_device" };
-          const entry = state.get(panel.selectedDevice);
+          const entry = getDisplayState(panel.selectedDevice); // Use interpolated state
           if (!entry) return { state: "waiting" };
           const layout = parseLayoutKey(panel.selectedLayoutKey);
           if (!layout) return { state: "no_layout" };
@@ -1280,7 +1339,7 @@
             });
             return;
         }
-        const entry = state.get(panel.selectedDevice);
+        const entry = getDisplayState(panel.selectedDevice); // Use interpolated state
         const gyro = entry?.gyro;
         ["x", "y", "z"].forEach((axis, idx) => {
              const v = gyro && Number.isFinite(gyro[idx]) ? gyro[idx] : null;
@@ -1502,6 +1561,13 @@
                  accValues = [a[0], a[1], a[2]];
              }
         }
+        
+        // Prevent out-of-order updates
+        if (state.has(dn)) {
+             const existing = state.get(dn);
+             if (frameTime && existing.frameTime && frameTime < existing.frameTime) return null;
+        }
+
         return {
             dn, sensorCount, frameTime,
             receivedAt: entry.received_at ? Date.parse(entry.received_at) : Date.now(),
@@ -1512,6 +1578,19 @@
       function applyEntry(entry, options = {}) {
           const normalized = normalizeEntry(entry);
           if (!normalized) return;
+          
+          const existing = state.get(normalized.dn);
+          if (existing) {
+              // Store previous state for interpolation
+              normalized.lastState = {
+                  pressureValues: existing.pressureValues,
+                  gyro: existing.gyro,
+                  acc: existing.acc,
+                  frameTime: existing.frameTime,
+                  receivedAt: existing.receivedAt
+              };
+          }
+          
           state.set(normalized.dn, normalized);
           if (!options.defer && shouldRequestSurfaceRefreshForDn(normalized.dn)) {
               requestSurfaceRefresh();
