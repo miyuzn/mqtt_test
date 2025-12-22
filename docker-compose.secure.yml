@@ -70,6 +70,8 @@ services:
       - BRIDGE_API_BASE_URL=http://backend:5001
       - BRIDGE_CONNECT_TIMEOUT=5
       - BRIDGE_READ_TIMEOUT=30
+      - BROKER_HOST=broker
+      - BROKER_PORT=1883
       - WEB_SSL_ENABLED=1
       - WEB_SSL_CERT=/certs/web.crt
       - WEB_SSL_KEY=/certs/web.key
