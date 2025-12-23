@@ -166,6 +166,7 @@ $mosFlags = [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::D
 $mosReq.CertificateExtensions.Add((New-Object System.Security.Cryptography.X509Certificates.X509KeyUsageExtension($mosFlags, $true))) | Out-Null
 $mosEku = New-Object System.Security.Cryptography.OidCollection
 $mosEku.Add((New-Object System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.1"))) | Out-Null # Server Authentication
+$mosEku.Add((New-Object System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.2"))) | Out-Null # Client Authentication (dev: allow reusing same cert/key for mTLS)
 $mosReq.CertificateExtensions.Add((New-Object System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension($mosEku, $true))) | Out-Null
 $mosReq.CertificateExtensions.Add((New-Object System.Security.Cryptography.X509Certificates.X509SubjectKeyIdentifierExtension($mosReq.PublicKey, $false))) | Out-Null
 $mosCert = if ($reuseExistingCa) {
