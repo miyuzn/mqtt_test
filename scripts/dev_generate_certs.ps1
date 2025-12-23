@@ -152,6 +152,7 @@ foreach ($name in ($MosquittoDnsNames | Where-Object { $_ -and $_.Trim() })) {
     $mosSan.AddDnsName($name.Trim())
 }
 $mosIps = @($MosquittoIpAddresses + (Get-LocalIpv4Addresses)) | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Sort-Object -Unique
+if ("127.0.0.1" -notin $mosIps) { $mosIps += "127.0.0.1" }
 foreach ($ip in $mosIps) {
     try {
         $mosSan.AddIpAddress([System.Net.IPAddress]::Parse($ip.Trim()))
@@ -184,6 +185,7 @@ foreach ($name in ($WebDnsNames | Where-Object { $_ -and $_.Trim() })) {
     $webSan.AddDnsName($name.Trim())
 }
 $webIps = @($WebIpAddresses + (Get-LocalIpv4Addresses)) | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Sort-Object -Unique
+if ("127.0.0.1" -notin $webIps) { $webIps += "127.0.0.1" }
 foreach ($ip in $webIps) {
     try {
         $webSan.AddIpAddress([System.Net.IPAddress]::Parse($ip.Trim()))
