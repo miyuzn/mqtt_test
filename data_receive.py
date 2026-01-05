@@ -890,8 +890,8 @@ def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
     }
 
 def mqtt_worker():
-    """Consumer: drain queue, emit optional raw batches, and publish parsed JSON.
-    消费者：从队列取数据→（可选）原始聚合发布 + 解析后 JSON 发布。
+    """Consumer: drain queue, emit optional raw batches, and publish parsed JSON (batched).
+    消费者：从队列取数据→（可选）原始聚合发布 + 解析后 JSON 批量发布。
     """
     global pkt_pub_raw, pkt_pub_parsed, pkt_parse_err
 
@@ -924,9 +924,14 @@ def mqtt_worker():
     threading.Thread(target=registry_announcer, args=(client,), daemon=True).start()
     sep = b"\n" if BATCH_SEPARATOR == "NL" else b""
 
-    # Maintain a "raw aggregation buffer" to avoid blocking parsing / 为了不阻塞解析，维护一个“原始聚合缓冲区”
+    # Raw aggregation buffer / 原始聚合缓冲区
     raw_batch = []
     raw_t0 = None
+
+    # Parsed aggregation buffers: dn_hex -> list[body], dn_hex -> start_time
+    # 解析聚合缓冲区：按 DN 分组
+    parsed_batches: Dict[str, list] = {}
+    parsed_t0: Dict[str, float] = {}
 
     def flush_raw():
         nonlocal raw_batch, raw_t0
@@ -941,14 +946,43 @@ def mqtt_worker():
         raw_batch = []
         raw_t0 = None
 
+    def flush_parsed(dn_target: str):
+        nonlocal parsed_batches, parsed_t0
+        global pkt_pub_parsed
+        batch = parsed_batches.get(dn_target)
+        if not batch:
+            return
+        
+        # Publish as a JSON array (batch)
+        try:
+            payload = json.dumps(batch, ensure_ascii=False, separators=(",", ":"))
+            topic = f"{TOPIC_PARSED_PR}/{dn_target}"
+            client.publish(topic, payload=payload, qos=MQTT_QOS)
+            pkt_pub_parsed += len(batch)
+        except Exception:
+            pass
+        
+        parsed_batches[dn_target] = []
+        parsed_t0.pop(dn_target, None)
+
+    def check_timeouts():
+        now = time.time()
+        # Raw timeout
+        if PUBLISH_RAW and raw_batch and raw_t0 is not None:
+            if (now - raw_t0) * 1000.0 >= BATCH_MAX_MS:
+                flush_raw()
+        # Parsed timeouts
+        if PUBLISH_PARSED:
+            for dn, t0 in list(parsed_t0.items()):
+                if (now - t0) * 1000.0 >= BATCH_MAX_MS:
+                    flush_parsed(dn)
+
     while running:
         try:
-            payload_bytes, addr = q.get(timeout=0.1)
+            # Short timeout to allow frequent timeout checks
+            payload_bytes, addr = q.get(timeout=0.01)
         except queue.Empty:
-            # Flush raw batch when the time window expires / 时间窗到期时，冲刷原始批
-            if PUBLISH_RAW and raw_batch and raw_t0 is not None:
-                if (time.time() - raw_t0) * 1000.0 >= BATCH_MAX_MS:
-                    flush_raw()
+            check_timeouts()
             continue
 
         ip_source = addr[0] if isinstance(addr, tuple) and addr else None
@@ -957,7 +991,7 @@ def mqtt_worker():
             if dn_hint:
                 update_device_registry(dn_hint, ip_source)
 
-        # Path 1: raw aggregation to reduce overhead / 原始路径：聚合以降低开销
+        # Path 1: Raw aggregation
         if PUBLISH_RAW:
             if not raw_batch:
                 raw_t0 = time.time()
@@ -965,28 +999,49 @@ def mqtt_worker():
             if len(raw_batch) >= BATCH_MAX_ITEMS:
                 flush_raw()
 
-        # Path 2: parse per packet and publish per-DN NDJSON (one line per frame) / 解析路径：逐包解析、按 DN 分 topic 发布（NDJSON，一包一行）
+        # Path 2: Parsed batching
         if PUBLISH_PARSED:
             try:
-                sd = sensor2.parse_sensor_data(payload_bytes)  # Parsing logic matches sensor2.py / 解析逻辑与 sensor2.py 一致
+                sd = sensor2.parse_sensor_data(payload_bytes)
                 if sd is None:
-                    # Ignore invalid frames / 非法帧：忽略
+                    # check timeouts even if packet invalid, to avoid stall
+                    check_timeouts()
                     continue
+                
                 dn_hex, body = encode_parsed(sd)
-                ip_source = addr[0] if isinstance(addr, tuple) and addr else None
                 update_device_registry(dn_hex, ip_source)
-                topic_parsed = f"{TOPIC_PARSED_PR}/{dn_hex}"  # Example: etx/v1/parsed/E00AD6773866 / 例如 etx/v1/parsed/E00AD6773866
-                # Use NDJSON (one frame per line) for downstream streaming / 采用 NDJSON（每帧一行），便于下游流式消费
-                payload = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
-                client.publish(topic_parsed, payload=payload, qos=MQTT_QOS)
-                pkt_pub_parsed += 1
+                
+                if dn_hex not in parsed_batches:
+                    parsed_batches[dn_hex] = []
+                    parsed_t0[dn_hex] = time.time()
+                
+                parsed_batches[dn_hex].append(body)
+                
+                if len(parsed_batches[dn_hex]) >= BATCH_MAX_ITEMS:
+                    flush_parsed(dn_hex)
+                else:
+                    # Optional: check timeouts periodically even during busy burst?
+                    # For very high throughput, we rely on batch size trigger.
+                    # But if we have mix of slow and fast devices, we should check timeouts.
+                    # Doing it every packet might be too expensive if queue is full.
+                    # Let's do it every 10 packets or simple modulo check if needed.
+                    # For now, rely on queue.get timeout or batch size.
+                    pass
+
             except Exception:
                 pkt_parse_err += 1
-                # Continue even if parsing fails / 解析失败不终止流程，继续
+        
+        # Periodic timeout check (in case we are receiving data but not filling batches fast enough)
+        # However, checking time.time() every loop is cheap enough.
+        # But to be super safe against overhead:
+        if q.qsize() == 0:
+            check_timeouts()
 
-    # Flush raw batch once before exit / 退出前冲刷一次原始批
+    # Flush all before exit
     try:
         flush_raw()
+        for dn in list(parsed_batches.keys()):
+            flush_parsed(dn)
     except Exception:
         pass
 

@@ -1638,7 +1638,12 @@
           });
           source.addEventListener("update", (e) => {
               try {
-                  applyEntry(JSON.parse(e.data));
+                  const payload = JSON.parse(e.data);
+                  if (Array.isArray(payload)) {
+                      payload.forEach(item => applyEntry(item));
+                  } else {
+                      applyEntry(payload);
+                  }
               } catch(err) { console.error(err); }
           });
           source.addEventListener("error", () => {

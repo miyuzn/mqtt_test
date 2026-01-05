@@ -133,18 +133,34 @@ class BridgeService:
 
     def _on_message(self, client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
         payload = self._decode_payload(msg.payload)
-        dn = self._extract_dn(msg.topic, payload)
-        # Create a normalized entry so downstream caches/web clients share the same shape.
-        # 生成统一结构的数据项，方便缓存与前端共同复用。
-        entry = {
-            "dn": dn,
-            "topic": msg.topic,
-            "payload": payload,
-            "received_at": datetime.now(timezone.utc).isoformat(),
-        }
+        
+        # Support batched updates (list of objects) or single object
+        items = payload if isinstance(payload, list) else [payload]
+        entries = []
+
         with self._cache_lock:
-            self._latest_by_dn[dn] = entry
-        self._broadcast(entry)
+            for item in items:
+                # Extract DN for each item (if payload is a dict) or fallback to topic
+                dn = self._extract_dn(msg.topic, item)
+                
+                # Create a normalized entry
+                entry = {
+                    "dn": dn,
+                    "topic": msg.topic,
+                    "payload": item,
+                    "received_at": datetime.now(timezone.utc).isoformat(),
+                }
+                # Update cache with latest
+                self._latest_by_dn[dn] = entry
+                entries.append(entry)
+        
+        if entries:
+            # Broadcast the whole batch to reduce IPC/context switch overhead
+            # The frontend now supports array payloads for "update" event
+            if len(entries) == 1:
+                self._broadcast(entries[0])
+            else:
+                self._broadcast(entries)
 
     def _decode_payload(self, payload: bytes | None) -> Any:
         if not payload:
@@ -222,7 +238,7 @@ class BridgeService:
                         self._listeners.remove(q)
 
     def register_listener(self) -> queue.Queue:
-        q: queue.Queue = queue.Queue(maxsize=20)
+        q: queue.Queue = queue.Queue(maxsize=200)
         with self._listeners_lock:
             self._listeners.append(q)
         return q
