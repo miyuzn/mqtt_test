@@ -500,7 +500,8 @@
             mirrorCols: false,
             deviceOptionsCache: { devices: [], selected: null, lang: null },
             layoutOptionsCache: { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null },
-            lastTextUpdate: 0,
+            lastSensorUpdate: 0,
+            lastCopUpdate: 0,
             three: null
         };
 
@@ -1312,7 +1313,7 @@
         return scaled.toFixed(decimals);
       }
       
-      function updatePanelSensors(panel) {
+      function updatePanelSensors(panel, force = false) {
         if (!panel.selectedDevice) {
             ["x","y","z"].forEach(k => {
                 if (panel.gyroElements[k]) panel.gyroElements[k].textContent = "--";
@@ -1320,6 +1321,11 @@
             });
             return;
         }
+
+        const now = performance.now();
+        if (!force && now - panel.lastSensorUpdate < TEXT_UPDATE_INTERVAL_MS) return;
+        panel.lastSensorUpdate = now;
+
         const entry = getDisplayState(panel.selectedDevice); // Use interpolated state
         const gyro = entry?.gyro;
         ["x", "y", "z"].forEach((axis, idx) => {
@@ -1333,12 +1339,17 @@
         });
       }
       
-      function updatePanelCop(panel) {
+      function updatePanelCop(panel, force = false) {
           if (!panel.copBoard) return;
           if (!copVisible) {
              // Already handled by CSS class toggle, but good to bail
              return; 
           }
+
+          const now = performance.now();
+          if (!force && now - panel.lastCopUpdate < TEXT_UPDATE_INTERVAL_MS) return;
+          panel.lastCopUpdate = now;
+
           const ctx = panelRenderCache.get(panel.key);
           const board = panel.copBoard;
           const dot = panel.copDot;
