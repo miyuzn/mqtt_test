@@ -252,8 +252,8 @@
       const DEFAULT_RANGE_MAX = 1000;
       let customRangeMin = DEFAULT_RANGE_MIN;
       let customRangeMax = DEFAULT_RANGE_MAX;
-      const REFRESH_INTERVAL_MS = 20;
-      const SURFACE_LOOP_IDLE_MS = 250;
+      const REFRESH_INTERVAL_MS = 33;
+      const SURFACE_LOOP_IDLE_MS = 500;
       let surfaceLoopRafId = null;
       let surfaceLoopActiveUntil = 0;
       let surfaceDirty = false;
@@ -1111,7 +1111,7 @@
       // Strategy Switch: "Chasing" Value Interpolation
       // We maintain a separate 'displayState' for each device that chases the latest 'networkState' (state.get(dn))
       const displayStates = new Map();
-      const LERP_FACTOR = 0.2; // Adjust for smoothness (lower = smoother/slower)
+      const LERP_FACTOR = 0.15; // Lower factor for smoother 60FPS animation with high-rate data
 
       function getDisplayState(dn) {
           const target = state.get(dn);
@@ -1505,12 +1505,16 @@
       }
       
       function surfaceLoopTick(ts) {
-          if (!surfaceDirty && ts > surfaceLoopActiveUntil) {
+          // If active window expired, stop loop
+          if (ts > surfaceLoopActiveUntil) {
               surfaceLoopRafId = null;
               return;
           }
           surfaceLoopRafId = window.requestAnimationFrame(surfaceLoopTick);
-          if (!surfaceDirty || document.hidden) return;
+          
+          if (document.hidden) return;
+          // Note: We ignore 'surfaceDirty' here to ensure continuous interpolation (LERP) 
+          // runs every frame while the loop is active (data recently arrived).
           surfaceDirty = false;
           
           const panelData = panels.map(panel => ({ panel, ctx: buildPanelRenderContext(panel) }));

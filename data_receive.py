@@ -27,7 +27,7 @@ import app.sensor2 as sensor2  # Ensure the module name matches sensor2.py in th
 # ======================
 # Configuration (read from config.ini, overridable via environment variables) / 配置（从 config.ini 读取，环境变量可覆盖）
 # ======================
-CONFIG_PATH = os.getenv("CONFIG_PATH", "config.ini")
+CONFIG_PATH = os.getenv("CONFIG_PATH", "config.secure.ini")
 
 config = configparser.ConfigParser()
 config.read(CONFIG_PATH, encoding="utf-8")
