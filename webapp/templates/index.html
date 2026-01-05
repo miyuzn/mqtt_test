@@ -253,6 +253,7 @@
       let customRangeMin = DEFAULT_RANGE_MIN;
       let customRangeMax = DEFAULT_RANGE_MAX;
       const REFRESH_INTERVAL_MS = 33;
+      const TEXT_UPDATE_INTERVAL_MS = 66.7; // ~15 FPS for text data
       const SURFACE_LOOP_IDLE_MS = 500;
       let surfaceLoopRafId = null;
       let surfaceLoopActiveUntil = 0;
@@ -499,6 +500,7 @@
             mirrorCols: false,
             deviceOptionsCache: { devices: [], selected: null, lang: null },
             layoutOptionsCache: { dn: null, sensorCount: null, options: [], selectedKey: null, lang: null },
+            lastTextUpdate: 0,
             three: null
         };
 
