@@ -1108,31 +1108,10 @@
           return entry; // Placeholder for now, switching strategy below
       }
       
-      // Strategy Switch: "Chasing" Value Interpolation
-      // We maintain a separate 'displayState' for each device that chases the latest 'networkState' (state.get(dn))
-      const displayStates = new Map();
-      const LERP_FACTOR = 0.15; // Lower factor for smoother 60FPS animation with high-rate data
-
+      // Strategy Switch: Direct Rendering (No Interpolation)
+      // To minimize latency, we render the latest available data immediately.
       function getDisplayState(dn) {
-          const target = state.get(dn);
-          if (!target) return null;
-          
-          let current = displayStates.get(dn);
-          if (!current) {
-              // First frame, jump directly
-              current = { ...target };
-              displayStates.set(dn, current);
-              return current;
-          }
-          
-          // LERP pressure values
-          current.pressureValues = lerpArray(current.pressureValues, target.pressureValues, LERP_FACTOR);
-          
-          // LERP IMU if needed (optional, might be too jittery if LERP'd)
-          if (target.gyro) current.gyro = lerpArray(current.gyro || [0,0,0], target.gyro, LERP_FACTOR);
-          if (target.acc) current.acc = lerpArray(current.acc || [0,0,0], target.acc, LERP_FACTOR);
-          
-          return current;
+          return state.get(dn);
       }
       
       function buildPanelRenderContext(panel) {
@@ -1505,16 +1484,12 @@
       }
       
       function surfaceLoopTick(ts) {
-          // If active window expired, stop loop
-          if (ts > surfaceLoopActiveUntil) {
+          if (!surfaceDirty && ts > surfaceLoopActiveUntil) {
               surfaceLoopRafId = null;
               return;
           }
           surfaceLoopRafId = window.requestAnimationFrame(surfaceLoopTick);
-          
-          if (document.hidden) return;
-          // Note: We ignore 'surfaceDirty' here to ensure continuous interpolation (LERP) 
-          // runs every frame while the loop is active (data recently arrived).
+          if (!surfaceDirty || document.hidden) return;
           surfaceDirty = false;
           
           const panelData = panels.map(panel => ({ panel, ctx: buildPanelRenderContext(panel) }));
