@@ -754,7 +754,7 @@ def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
             target_ip, discoveries, broadcast_targets = resolve_ip_with_discovery(dn_hex, target_ip)
 
     # Generic control payload path (standby/filter/calibration/spiffs or explicit raw/custom)
-    control_keys = ("standby", "filter", "calibration", "spiffs")
+    control_keys = ("standby", "filter", "calibration", "spiffs", "log")
     if cmd_type in ("raw", "custom", "control") or any(k in payload_section for k in control_keys):
         if not target_ip:
             raise ConfigCommandError("Target DN currently is not associated with any IP (discovery failed)")

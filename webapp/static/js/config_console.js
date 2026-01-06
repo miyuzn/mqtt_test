@@ -49,6 +49,7 @@ const controlLicenseDaysInput = document.getElementById('control-license-days');
 const controlLicenseTierSelect = document.getElementById('control-license-tier');
 const controlLicensePortInput = document.getElementById('control-license-port');
 const controlLicenseIpInput = document.getElementById('control-license-ip');
+const controlLogLevelSelect = document.getElementById('control-log-level');
 
 const state = {
   devices: [],
@@ -66,6 +67,43 @@ const fetchJSON = async (path, options = {}) => {
   }
   return resp.json();
 };
+
+function reorderLogBytes(dataUint8, offset) {
+  if (!dataUint8 || !dataUint8.length) return dataUint8;
+  if (offset <= 0 || offset >= dataUint8.length) {
+    // Remove trailing nulls if simple linear buffer
+    let end = dataUint8.length;
+    while (end > 0 && dataUint8[end - 1] === 0) end--;
+    return dataUint8.subarray(0, end);
+  }
+  // Circular buffer: tail is at [offset:], head is at [:offset]
+  const tail = dataUint8.subarray(offset);
+  const head = dataUint8.subarray(0, offset);
+  
+  // Check if tail has any non-null data. If tail is all 0, maybe we haven't wrapped yet?
+  // But typically ring buffer logic means we should concatenate tail + head.
+  // We'll trust the offset.
+  const ordered = new Uint8Array(dataUint8.length);
+  ordered.set(tail, 0);
+  ordered.set(head, tail.length);
+  
+  // Trim trailing nulls from the ordered result
+  let end = ordered.length;
+  while (end > 0 && ordered[end - 1] === 0) end--;
+  return ordered.subarray(0, end);
+}
+
+function triggerDownload(dataUint8, filename) {
+  const blob = new Blob([dataUint8], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 const parsePins = (value) =>
   Array.from(
@@ -270,7 +308,6 @@ function renderDnOptions() {
     if (!dn || seen.has(dn)) return;
     seen.add(dn);
     const opt = document.createElement('option');
-    opt.value = dn;
     dnDatalist.appendChild(opt);
   });
 }
@@ -497,6 +534,11 @@ function updateControlVisibility(action) {
       visible.add('control-level');
       visible.add('control-port');
       break;
+    case 'calib_all':
+      visible.add('control-level');
+      visible.add('control-calib'); // for start/duration
+      visible.add('control-port');
+      break;
     case 'calib_level_query':
     case 'calib_level_delete':
       visible.add('control-level');
@@ -529,6 +571,17 @@ function updateControlVisibility(action) {
       visible.add('control-license-mac');
       visible.add('control-license-port');
       visible.add('control-license-ip');
+      break;
+    case 'log_enable':
+      visible.add('control-log');
+      visible.add('control-port');
+      break;
+    case 'log_disable':
+    case 'log_status':
+      visible.add('control-port');
+      break;
+    case 'log_download':
+      visible.add('control-port');
       break;
     case 'filter_query':
     case 'standby_enable':
@@ -642,6 +695,17 @@ async function handleControlSubmit(event) {
   const licenseTierVal = (controlLicenseTierSelect?.value || licenseDefaults.tier || 'basic').trim().toLowerCase();
   const licensePortVal = getNumeric(controlLicensePortInput) || Number(licenseDefaults.port || 0) || undefined;
   let licenseTargetIp = (controlLicenseIpInput?.value || targetIp || '').trim();
+  const logLevelVal = controlLogLevelSelect?.value || 'info';
+
+  const doSend = async (body) => {
+    if (targetIp) body.target_ip = targetIp;
+    if (port !== undefined && !body.payload.port) body.payload.port = port;
+    return fetchJSON('/api/config/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  };
 
   switch (action) {
     case 'standby_enable':
@@ -680,6 +744,20 @@ async function handleControlSubmit(event) {
           command: 'calibration',
           analogpin: analogpinVal,
           selectpin: selectpinVal,
+          level: Number(levelVal),
+          start_time: startTimeVal ?? 1000,
+          calibration_time: calibTimeVal ?? 5000,
+        },
+      };
+      break;
+    case 'calib_all':
+      if (!levelVal) {
+        setControlFeedback('Calibration level is required.', true);
+        return;
+      }
+      payload = {
+        calibration: {
+          command: 'calibrate_all',
           level: Number(levelVal),
           start_time: startTimeVal ?? 1000,
           calibration_time: calibTimeVal ?? 5000,
@@ -740,6 +818,69 @@ async function handleControlSubmit(event) {
       payload = { spiffs: { command: 'write', path: pathVal, data_base64: dataB64 } };
       break;
     }
+    case 'log_status':
+      payload = { log: { command: 'status' } };
+      break;
+    case 'log_enable':
+      payload = { log: { command: 'enable', level: logLevelVal } };
+      break;
+    case 'log_disable':
+      payload = { log: { command: 'disable' } };
+      break;
+    case 'log_download': {
+      setControlFeedback('Downloading log: 1. Checking status...', false);
+      try {
+        // 1. Get status for offset
+        const statusBody = { dn, payload: { log: { command: 'status' } } };
+        const statusResp = await doSend(statusBody);
+        let offset = 0;
+        let maxBytes = 32768;
+        
+        // Wait for reply via polling (since it's async MQTT) or assume we can't reliably get it instantly?
+        // Actually, 'doSend' queues the command. We don't get the reply instantly in the HTTP response usually,
+        // unless it's a direct command. config_console uses MQTT. 
+        // Wait, 'send_filter_config.py' uses TCP directly to the device.
+        // config_console uses MQTT which is async.
+        // However, `data_receive.py` execute_command DOES return the "reply" if it can talk TCP to the device immediately!
+        // `execute_command` -> `send_config_payload` -> TCP.
+        // So yes, we get the reply in `statusResp.reply`.
+        
+        if (statusResp.reply && statusResp.reply.log) {
+          offset = statusResp.reply.log.offset || 0;
+          maxBytes = statusResp.reply.log.max_bytes || 32768;
+        } else {
+          setControlFeedback('Log status reply missing, assuming defaults.', false);
+        }
+        
+        // 2. Read log file
+        setControlFeedback(`Downloading log: 2. Reading /log.txt (limit ${maxBytes})...`, false);
+        const readBody = { dn, payload: { spiffs: { command: 'read', path: '/log.txt', limit: maxBytes } } };
+        const readResp = await doSend(readBody);
+        
+        if (!readResp.reply || !readResp.reply.data_base64) {
+           throw new Error('No data_base64 in read response');
+        }
+        
+        // 3. Decode and reorder
+        const binaryString = atob(readResp.reply.data_base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        const ordered = reorderLogBytes(bytes, offset);
+        
+        // 4. Download
+        triggerDownload(ordered, 'log_ordered.txt');
+        setControlFeedback('Log downloaded successfully.', false);
+        loadResults();
+        
+      } catch (err) {
+        setControlFeedback(`Log download failed: ${err.message}`, true);
+      }
+      return;
+    }
+
     case 'license_apply': {
       if (!licenseMacVal || licenseMacVal.length !== 12) {
         setControlFeedback('Device code (MAC) must be 12 hex characters.', true);
@@ -807,15 +948,10 @@ async function handleControlSubmit(event) {
     dn,
     payload,
   };
-  if (targetIp) body.target_ip = targetIp;
-
+  
   setControlFeedback('Sending...', false);
   try {
-    const resp = await fetchJSON('/api/config/control', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const resp = await doSend(body);
     setControlFeedback(`Command ${resp.command_id || ''} queued.`, false);
     loadResults();
   } catch (error) {

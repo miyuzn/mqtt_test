@@ -104,10 +104,15 @@
                 <option value="calib_collect">Calibration collect</option>
                 <option value="calib_level_query">Query level</option>
                 <option value="calib_level_delete">Delete level</option>
+                <option value="calib_all">Calibrate all sensors</option>
                 <option value="spiffs_list">SPIFFS list</option>
                 <option value="spiffs_read">SPIFFS read</option>
                 <option value="spiffs_write">SPIFFS write</option>
                 <option value="spiffs_delete">SPIFFS delete</option>
+                <option value="log_status">Log status</option>
+                <option value="log_enable">Log enable</option>
+                <option value="log_disable">Log disable</option>
+                <option value="log_download">Log download (ordered)</option>
                 <option value="license_apply">License apply</option>
                 <option value="license_query">License query</option>
               </select>
@@ -120,6 +125,17 @@
               <div class="field control-field control-level">
                 <label for="control-level">Level / path (multi-use)</label>
                 <input id="control-level" placeholder="e.g. 0.5 or /path" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field control-field control-log">
+                <label for="control-log-level">Log level</label>
+                <select id="control-log-level">
+                  <option value="debug">debug</option>
+                  <option value="info">info</option>
+                  <option value="warn">warn</option>
+                  <option value="error">error</option>
+                </select>
               </div>
             </div>
             <div class="field-group">

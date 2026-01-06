@@ -71,16 +71,50 @@ def discover_devices(broadcast_addr=None, attempts=1, gap=0.1, timeout=10.0):
     sock.close()
 
 
+def parse_json_response(resp):
+  text = resp.strip()
+  if not text:
+    return None
+  try:
+    return json.loads(text)
+  except Exception:
+    pass
+  for line in text.splitlines():
+    line = line.strip()
+    if not line:
+      continue
+    if not (line.startswith("{") and line.endswith("}")):
+      continue
+    try:
+      return json.loads(line)
+    except Exception:
+      continue
+  return None
+
+
+def reorder_log_bytes(data, offset):
+  if not data:
+    return data
+  if offset <= 0 or offset >= len(data):
+    return data.rstrip(b"\x00")
+  tail = data[offset:]
+  if any(b != 0 for b in tail):
+    ordered = tail + data[:offset]
+  else:
+    ordered = data[:offset]
+  return ordered.strip(b"\x00")
+
+
 def prompt_filter_config():
-  en_str = input("是否启用滤波 [y/n/空跳过]: ").strip().lower()
+  en_str = input("Enable filter? [y/n/blank=skip]: ").strip().lower()
   enabled = None
   if en_str in ("y", "yes", "1", "true"):
     enabled = True
   elif en_str in ("n", "no", "0", "false"):
     enabled = False
-  alpha = input("IIR alpha (0.05~0.6，空跳过): ").strip()
+  alpha = input("IIR alpha (0.05~0.6, blank=skip): ").strip()
   alpha_val = float(alpha) if alpha else None
-  median = input("中值窗口 1/3/5 (空跳过): ").strip()
+  median = input("Median window 1/3/5 (blank=skip): ").strip()
   median_val = int(median) if median else None
   payload = {"filter": {}}
   if enabled is not None:
@@ -95,9 +129,9 @@ def prompt_filter_config():
 def prompt_calibration_calibrate():
   analogpin = input("AnalogPin: ").strip()
   selectpin = input("SelectPin: ").strip()
-  level = input("标定点值(level): ").strip()
-  start_time = input("开始前等待(ms，默认1000): ").strip() or "1000"
-  calib_time = input("采集时长(ms，默认5000): ").strip() or "5000"
+  level = input("Calibration level value: ").strip()
+  start_time = input("Start delay (ms, default 1000): ").strip() or "1000"
+  calib_time = input("Sampling duration (ms, default 5000): ").strip() or "5000"
   payload = {
     "calibration": {
       "command": "calibration",
@@ -111,23 +145,38 @@ def prompt_calibration_calibrate():
   return payload
 
 
+def prompt_calibration_all():
+  level = input("Calibration level (default 0): ").strip() or "0"
+  start_time = input("Start delay (ms, default 1000): ").strip() or "1000"
+  calib_time = input("Sampling duration (ms, default 5000): ").strip() or "5000"
+  payload = {
+    "calibration": {
+      "command": "calibrate_all",
+      "level": float(level),
+      "start_time": int(start_time),
+      "calibration_time": int(calib_time)
+    }
+  }
+  return payload
+
+
 def main():
-  bcast = input("广播地址(回车默认 255.255.255.255，可填网段广播如 192.168.1.255): ").strip() or None
-  tries = input("广播次数(回车默认 1): ").strip()
+  bcast = input("Broadcast address (default 255.255.255.255, e.g. 192.168.1.255): ").strip() or None
+  tries = input("Broadcast attempts (default 1): ").strip()
   try:
     attempts = int(tries) if tries else 1
   except ValueError:
     attempts = 1
-  print(f"正在广播到 {bcast or '255.255.255.255'}:{DISCOVER_PORT} ，共 {attempts} 次...")
+  print(f"Broadcasting to {bcast or '255.255.255.255'}:{DISCOVER_PORT}, attempts={attempts} ...")
   devices = discover_devices(broadcast_addr=bcast, attempts=attempts, gap=0.2)
   if devices:
-    print("发现的设备：")
+    print("Discovered devices:")
     for i, dev in enumerate(devices, 1):
       print(f"{i}. ip={dev.get('ip')} mac={dev.get('mac')} model={dev.get('model')} license={dev.get('license')} port={dev.get('port')}")
   else:
-    print("未收到设备响应，可手动输入 IP 继续。")
+    print("No device responses; you can enter an IP manually.")
 
-  selection = input("选择设备序号，或直接输入 IP（留空退出）: ").strip()
+  selection = input("Select device index, or enter IP directly (blank to exit): ").strip()
   if not selection:
     return
 
@@ -140,26 +189,32 @@ def main():
       port = int(devices[idx - 1].get("port") or DEFAULT_PORT)
   if host is None:
     host = selection
-    port_in = input(f"端口 [默认 {DEFAULT_PORT}]: ").strip()
+    port_in = input(f"Port [default {DEFAULT_PORT}]: ").strip()
     port = int(port_in) if port_in else DEFAULT_PORT
 
   while True:
-    print("【提示】校准、滤波配置和 SPIFFS 操作需在待机模式下(1 进入，2 退出)")
-    print("1) 进入待机模式(standby enable)")
-    print("2) 退出待机模式(standby disable)")
-    print("3) 查询滤波配置")
-    print("4) 设置滤波配置")
-    print("5) 校准启用/关闭")
-    print("6) 校准采集(calibration)")
-    print("7) 查询校准状态(?)")
-    print("8) 查询某标定 level 矩阵")
-    print("9) 删除某标定 level")
-    print("10) SPIFFS 列表")
-    print("11) SPIFFS 读取到本地")
-    print("12) SPIFFS 上传文件")
-    print("13) SPIFFS 删除文件")
-    print("0) 退出")
-    action = input("选择 0-13: ").strip() or "3"
+    print("[Note] Calibration/filter/SPIFFS/log operations require standby (1 enter, 2 exit).")
+    print("[Note] Log enable will reboot the device.")
+    print("1) Enter standby (enable)")
+    print("2) Exit standby (disable)")
+    print("3) Query filter config")
+    print("4) Set filter config")
+    print("5) Enable/disable calibration")
+    print("6) Calibrate single sensor")
+    print("7) Query calibration status (?)")
+    print("8) Dump calibration matrix for a level")
+    print("9) Delete a calibration level")
+    print("10) SPIFFS list")
+    print("11) SPIFFS read to local")
+    print("12) SPIFFS upload file")
+    print("13) SPIFFS delete file")
+    print("14) Calibrate all sensors")
+    print("15) Log status")
+    print("16) Log enable")
+    print("17) Log disable")
+    print("18) Log download (ordered)")
+    print("0) Exit")
+    action = input("Choose 0-18: ").strip() or "3"
 
     if action == "0":
       break
@@ -167,87 +222,87 @@ def main():
     if action == "1":
       payload = {"standby": {"command": "enable"}}
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "2":
       payload = {"standby": {"command": "disable"}}
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "3":
       resp = send_json(host, port, {"filter": "?"})
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "4":
       payload = prompt_filter_config()
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "5":
-      status = input("输入 enabled/disabled: ").strip().lower()
+      status = input("Enter enabled/disabled: ").strip().lower()
       payload = {"calibration": {"command": status}}
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "6":
       payload = prompt_calibration_calibrate()
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "7":
       payload = {"calibration": {"command": "?"}}
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "8":
-      level = input("标定 level (如 0.5): ").strip()
+      level = input("Calibration level (e.g. 0.5): ").strip()
       payload = {"calibration": {"command": "level", "level": level}}
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "9":
-      level = input("标定 level (如 0.5): ").strip()
+      level = input("Calibration level to delete (e.g. 0.5): ").strip()
       payload = {"calibration": {"command": "delete", "level": level}}
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "10":
       payload = {"spiffs": {"command": "list"}}
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "11":
-      remote = input("远端路径(如 /calib_0.00.csv): ").strip() or "/"
-      limit = input("读取限制字节数(空=默认4096): ").strip()
+      remote = input("Remote path (e.g. /calib_0.00.csv): ").strip() or "/"
+      limit = input("Read limit bytes (blank=4096): ").strip()
       payload = {"spiffs": {"command": "read", "path": remote}}
       if limit:
         try:
@@ -255,28 +310,28 @@ def main():
         except ValueError:
           pass
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
+      print("Send:", json.dumps(payload))
       if resp.strip().startswith("{") and "\"data_base64\"" in resp:
         try:
           obj = json.loads(resp)
           data_b64 = obj.get("data_base64", "")
           data = base64.b64decode(data_b64.encode())
-          out_path = input("保存到本地文件路径(空=保存到当前目录同名文件): ").strip()
+          out_path = input("Save to local path (blank=use same name): ").strip()
           if not out_path:
             fname = remote.split("/")[-1] or "spiffs.bin"
             out_path = fname
           with open(out_path, "wb") as f:
             f.write(data)
-          print(f"已保存 {len(data)} 字节到 {out_path}")
+          print(f"Saved {len(data)} bytes to {out_path}")
         except Exception as e:
-          print(f"解析/保存失败: {e}")
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+          print(f"Parse/save failed: {e}")
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "12":
-      local_path = input("本地文件路径: ").strip()
-      remote = input("远端路径(空=与本地同名): ").strip()
+      local_path = input("Local file path: ").strip()
+      remote = input("Remote path (blank=use local filename): ").strip()
       if not remote:
         remote = "/" + local_path.split("\\")[-1].split("/")[-1]
         if not remote.startswith("/"):
@@ -285,27 +340,111 @@ def main():
         with open(local_path, "rb") as f:
           data = f.read()
       except OSError as e:
-        print(f"读取本地文件失败: {e}")
-        input("按回车返回菜单...")
+        print(f"Failed to read local file: {e}")
+        input("Press Enter to return to menu...")
         continue
       b64 = base64.b64encode(data).decode()
       payload = {"spiffs": {"command": "write", "path": remote, "data_base64": b64}}
       resp = send_json(host, port, payload)
-      print(f"发送: 写入 {len(data)} 字节到 {remote}")
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print(f"Send: wrote {len(data)} bytes to {remote}")
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
     if action == "13":
-      remote = input("远端路径: ").strip()
+      remote = input("Remote path: ").strip()
       payload = {"spiffs": {"command": "delete", "path": remote}}
       resp = send_json(host, port, payload)
-      print("发送:", json.dumps(payload))
-      print("设备响应:", resp.strip() or "<空>")
-      input("按回车返回菜单...")
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
       continue
 
-    print("不支持的选项")
+    if action == "14":
+      payload = prompt_calibration_all()
+      resp = send_json(host, port, payload)
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
+      continue
+
+    if action == "15":
+      payload = {"log": {"command": "status"}}
+      resp = send_json(host, port, payload)
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
+      continue
+
+    if action == "16":
+      level = input("Log level (debug/info/warn/error): ").strip().lower()
+      if level not in ("debug", "info", "warn", "error"):
+        print("Invalid level; expected debug/info/warn/error")
+        input("Press Enter to return to menu...")
+        continue
+      payload = {"log": {"command": "enable", "level": level}}
+      resp = send_json(host, port, payload)
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      print("Note: device will reboot if enabled.")
+      input("Press Enter to return to menu...")
+      continue
+
+    if action == "17":
+      payload = {"log": {"command": "disable"}}
+      resp = send_json(host, port, payload)
+      print("Send:", json.dumps(payload))
+      print("Device response:", resp.strip() or "<empty>")
+      input("Press Enter to return to menu...")
+      continue
+
+    if action == "18":
+      status_resp = send_json(host, port, {"log": {"command": "status"}})
+      status_obj = parse_json_response(status_resp) or {}
+      log_obj = status_obj.get("log") if isinstance(status_obj, dict) else None
+      offset = None
+      max_bytes = None
+      if isinstance(log_obj, dict):
+        offset = log_obj.get("offset")
+        max_bytes = log_obj.get("max_bytes")
+      try:
+        offset = int(offset) if offset is not None else None
+      except (TypeError, ValueError):
+        offset = None
+      try:
+        max_bytes = int(max_bytes) if max_bytes is not None else 32768
+      except (TypeError, ValueError):
+        max_bytes = 32768
+
+      payload = {"spiffs": {"command": "read", "path": "/log.txt", "limit": max_bytes}}
+      resp = send_json(host, port, payload)
+      obj = parse_json_response(resp)
+      if not obj or "data_base64" not in obj:
+        print("Send:", json.dumps(payload))
+        print("Device response:", resp.strip() or "<empty>")
+        input("Press Enter to return to menu...")
+        continue
+      try:
+        data = base64.b64decode(obj.get("data_base64", "").encode())
+      except Exception as e:
+        print(f"Decode failed: {e}")
+        input("Press Enter to return to menu...")
+        continue
+
+      ordered = reorder_log_bytes(data, offset or 0)
+      out_path = input("Save to local path (blank=log_ordered.txt): ").strip() or "log_ordered.txt"
+      try:
+        with open(out_path, "wb") as f:
+          f.write(ordered)
+        print(f"Saved {len(ordered)} bytes to {out_path}")
+        if offset is not None:
+          print(f"Used offset: {offset}")
+      except OSError as e:
+        print(f"Save failed: {e}")
+      input("Press Enter to return to menu...")
+      continue
+
+    print("Unsupported option")
 
 
 if __name__ == "__main__":
