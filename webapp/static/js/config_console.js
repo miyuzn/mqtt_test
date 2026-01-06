@@ -968,7 +968,7 @@ async function handleControlSubmit(event) {
         const readBody = { dn, payload: { spiffs: { command: 'read', path: '/log.txt', limit: maxBytes } } };
         const readResp = await doSend(readBody);
         
-        if (!readResp.reply || !readResp.reply.data_base64) {
+        if (!readResp.reply || typeof readResp.reply.data_base64 !== 'string') {
            throw new Error('No data_base64 in read response');
         }
         
