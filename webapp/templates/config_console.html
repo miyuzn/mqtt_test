@@ -276,6 +276,19 @@
           </table>
         </div>
       </div>
+
+      <div class="panel-block">
+        <header class="panel-block-header">
+          <div>
+            <h3>Sent Command Log</h3>
+            <p>History of JSON payloads sent from this console.</p>
+          </div>
+          <button id="clear-debug-log" class="ghost-btn" style="font-size: 0.8rem; padding: 2px 8px;">Clear Log</button>
+        </header>
+        <div class="debug-log-wrapper" style="max-height: 300px; overflow-y: auto; background: #f5f5f5; padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem;">
+          <pre id="debug-log-content" style="margin: 0; white-space: pre-wrap; word-break: break-all;"></pre>
+        </div>
+      </div>
     </section>
 
     <script>

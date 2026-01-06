@@ -50,6 +50,8 @@ const controlLicenseTierSelect = document.getElementById('control-license-tier')
 const controlLicensePortInput = document.getElementById('control-license-port');
 const controlLicenseIpInput = document.getElementById('control-license-ip');
 const controlLogLevelSelect = document.getElementById('control-log-level');
+const debugLogContent = document.getElementById('debug-log-content');
+const clearDebugLogBtn = document.getElementById('clear-debug-log');
 
 const state = {
   devices: [],
@@ -58,6 +60,14 @@ const state = {
     broadcast: [],
   },
 };
+
+function logDebugJson(label, data) {
+  if (!debugLogContent) return;
+  const ts = new Date().toISOString().split('T')[1].slice(0, -1); // HH:MM:SS.mmm
+  const jsonStr = JSON.stringify(data, null, 2);
+  const entry = `[${ts}] ${label}:\n${jsonStr}\n\n`;
+  debugLogContent.textContent = entry + debugLogContent.textContent;
+}
 
 const fetchJSON = async (path, options = {}) => {
   const resp = await fetch(`${API_BASE}${path}`, options);
@@ -389,10 +399,12 @@ async function loadDevices(withDiscover = false) {
   if (withDiscover) {
     deviceMeta.textContent = 'Sending broadcast discover...';
     try {
+      const body = {};
+      logDebugJson('Discover Broadcast', body);
       await fetchJSON('/api/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       });
     } catch (error) {
       deviceMeta.textContent = `Failed to queue discover: ${error.message}`;
@@ -469,6 +481,7 @@ async function handleSubmit(event) {
 
   setFormFeedback('Sending command via MQTT...', false);
   try {
+    logDebugJson('Config Apply', body);
     const resp = await fetchJSON('/api/config/apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -639,6 +652,11 @@ function init() {
     controlAction.addEventListener('change', () => updateControlVisibility(controlAction.value));
     updateControlVisibility(controlAction.value);
   }
+  if (clearDebugLogBtn) {
+    clearDebugLogBtn.addEventListener('click', () => {
+      if (debugLogContent) debugLogContent.textContent = '';
+    });
+  }
   loadDevices(true);
   loadResults();
   setInterval(loadResults, 8000);
@@ -700,6 +718,7 @@ async function handleControlSubmit(event) {
   const doSend = async (body) => {
     if (targetIp) body.target_ip = targetIp;
     if (port !== undefined && !body.payload.port) body.payload.port = port;
+    logDebugJson('Control Command', body);
     return fetchJSON('/api/config/control', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -900,6 +919,7 @@ async function handleControlSubmit(event) {
       if (licensePortVal && licensePortVal > 0) body.port = Math.floor(licensePortVal);
       setControlFeedback('Sending license apply...', false);
       try {
+        logDebugJson('License Apply', body);
         const resp = await fetchJSON('/api/license/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -927,6 +947,7 @@ async function handleControlSubmit(event) {
       if (licensePortVal && licensePortVal > 0) qs.set('port', Math.floor(licensePortVal));
       setControlFeedback('Sending license query...', false);
       try {
+        logDebugJson('License Query', Object.fromEntries(qs.entries()));
         const resp = await fetchJSON(`/api/license/query?${qs.toString()}`);
         setControlFeedback(`License query ${resp.command_id || ''} queued.`, false);
         loadResults();
