@@ -741,11 +741,18 @@ def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
     dn_hex = dn_to_hex(dn_raw)
     payload_section = cmd.get("payload") if isinstance(cmd.get("payload"), dict) else {}
     cmd_type = (cmd.get("type") or payload_section.get("type") or "").strip().lower()
-    target_ip = cmd.get("ip") or cmd.get("target_ip") or payload_section.get("ip") or resolve_device_ip(dn_hex)
+    
+    target_ip = cmd.get("ip") or cmd.get("target_ip") or payload_section.get("ip")
     discoveries: list[dict] = []
     broadcast_targets: list[str] = []
-    if not target_ip:
-        target_ip, discoveries, broadcast_targets = resolve_ip_with_discovery(dn_hex, target_ip)
+
+    # Only resolve IP if it's NOT a discovery command (avoid blocking broadcast)
+    if cmd_type not in ("discover", "discover_only", "discover_devices"):
+        if not target_ip:
+            target_ip = resolve_device_ip(dn_hex)
+        if not target_ip:
+            target_ip, discoveries, broadcast_targets = resolve_ip_with_discovery(dn_hex, target_ip)
+
     # Generic control payload path (standby/filter/calibration/spiffs or explicit raw/custom)
     control_keys = ("standby", "filter", "calibration", "spiffs")
     if cmd_type in ("raw", "custom", "control") or any(k in payload_section for k in control_keys):
