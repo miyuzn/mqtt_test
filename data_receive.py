@@ -877,10 +877,6 @@ def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
     analog = cmd.get("analog", payload_section.get("analog"))
     select = cmd.get("select", payload_section.get("select"))
     model = cmd.get("model", payload_section.get("model"))
-
-    if analog is None and select is None and model is None:
-        raise ConfigCommandError(f"Unknown command type '{cmd_type}' and no config pins provided")
-
     payload_obj, payload_str = build_config_payload(analog, select, model)
     if not target_ip:
         target_ip, discoveries, broadcast_targets = resolve_ip_with_discovery(dn_hex, target_ip)

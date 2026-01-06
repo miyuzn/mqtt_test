@@ -81,20 +81,5 @@ class TestNewFeatures(unittest.TestCase):
         self.assertEqual(sent_payload["calibration"]["command"], "calibrate_all")
         self.assertEqual(sent_payload["calibration"]["level"], 0.5)
 
-    def test_unknown_command_raises_error(self):
-        """
-        Test that an unknown command without config pins raises ConfigCommandError.
-        """
-        cmd = {
-            "command_id": "test-err",
-            "target_dn": "DEVICE001",
-            "payload": {
-                "type": "unknown_thing"
-            }
-        }
-        
-        with self.assertRaises(data_receive.ConfigCommandError):
-            data_receive.execute_command(cmd)
-
 if __name__ == '__main__':
     unittest.main()
