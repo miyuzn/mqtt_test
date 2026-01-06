@@ -1,4 +1,4 @@
-﻿const ANALOG_PRESETS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const ANALOG_PRESETS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const SELECT_PRESETS = [17, 18, 19, 20, 21, 35, 36, 37, 39, 40, 41, 42, 45];
 const API_BASE = '';
 const PCB_MODELS = {
@@ -61,11 +61,39 @@ const state = {
   },
 };
 
+function truncateBase64(data) {
+  if (typeof data === 'string') {
+    if (data.length > 200 && !data.includes(' ')) {
+      return `<base64 data length=${data.length}>`;
+    }
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map(truncateBase64);
+  }
+  if (typeof data === 'object' && data !== null) {
+    const copy = {};
+    for (const key of Object.keys(data)) {
+      if (key === 'data_base64' && typeof data[key] === 'string') {
+        copy[key] = `<base64 data length=${data[key].length}>`;
+      } else {
+        copy[key] = truncateBase64(data[key]);
+      }
+    }
+    return copy;
+  }
+  return data;
+}
+
 function logDebugJson(label, data) {
   if (!debugLogContent) return;
   const ts = new Date().toISOString().split('T')[1].slice(0, -1); // HH:MM:SS.mmm
-  const jsonStr = JSON.stringify(data, null, 2);
-  const entry = `[${ts}] ${label}:\n${jsonStr}\n\n`;
+  const safeData = truncateBase64(data);
+  const jsonStr = JSON.stringify(safeData, null, 2);
+  const entry = `[${ts}] ${label}:
+${jsonStr}
+
+`;
   debugLogContent.textContent = entry + debugLogContent.textContent;
 }
 
@@ -81,23 +109,17 @@ const fetchJSON = async (path, options = {}) => {
 function reorderLogBytes(dataUint8, offset) {
   if (!dataUint8 || !dataUint8.length) return dataUint8;
   if (offset <= 0 || offset >= dataUint8.length) {
-    // Remove trailing nulls if simple linear buffer
     let end = dataUint8.length;
     while (end > 0 && dataUint8[end - 1] === 0) end--;
     return dataUint8.subarray(0, end);
   }
-  // Circular buffer: tail is at [offset:], head is at [:offset]
   const tail = dataUint8.subarray(offset);
   const head = dataUint8.subarray(0, offset);
   
-  // Check if tail has any non-null data. If tail is all 0, maybe we haven't wrapped yet?
-  // But typically ring buffer logic means we should concatenate tail + head.
-  // We'll trust the offset.
   const ordered = new Uint8Array(dataUint8.length);
   ordered.set(tail, 0);
   ordered.set(head, tail.length);
   
-  // Trim trailing nulls from the ordered result
   let end = ordered.length;
   while (end > 0 && ordered[end - 1] === 0) end--;
   return ordered.subarray(0, end);
@@ -113,6 +135,20 @@ function triggerDownload(dataUint8, filename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function extractLastLogLine(dataUint8) {
+  try {
+    const decoder = new TextDecoder('utf-8');
+    const text = decoder.decode(dataUint8);
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length > 0) {
+      return lines[lines.length - 1];
+    }
+    return '(log is empty)';
+  } catch (err) {
+    return `(parse failed: ${err.message})`;
+  }
 }
 
 const parsePins = (value) =>
@@ -355,7 +391,10 @@ function renderHistoryTable() {
     const overallStatus = (item.status || replyStatus || '').toLowerCase();
     const isOk = overallStatus ? overallStatus === 'ok' : replyStatus === 'ok';
     const statusClass = isOk ? 'status-ok' : 'status-error';
-    const detailPayload = item.error || item.reply || item.payload || {};
+    
+    const safeItem = truncateBase64(item);
+    
+    const detailPayload = safeItem.error || safeItem.reply || safeItem.payload || {};
     const detail = typeof detailPayload === 'string' ? detailPayload : JSON.stringify(detailPayload || {});
     const statusLabel = overallStatus || replyStatus || (isOk ? 'ok' : 'error');
     const payloadType = item.payload && item.payload.type ? String(item.payload.type).toLowerCase() : '';
@@ -800,14 +839,35 @@ async function handleControlSubmit(event) {
     case 'spiffs_list':
       payload = { spiffs: { command: 'list' } };
       break;
-    case 'spiffs_read':
+    case 'spiffs_read': {
       if (!pathVal) {
         setControlFeedback('Please provide a path.', true);
         return;
       }
       payload = { spiffs: { command: 'read', path: pathVal } };
       if (limitVal !== undefined) payload.spiffs.limit = limitVal;
-      break;
+      
+      setControlFeedback('Reading file...', false);
+      try {
+        const resp = await doSend({ dn, payload });
+        if (resp.reply && resp.reply.data_base64) {
+          const binaryString = atob(resp.reply.data_base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const fname = pathVal.split('/').pop() || 'download.bin';
+          triggerDownload(bytes, fname);
+          setControlFeedback(`Read success. Downloaded ${bytes.length} bytes as ${fname}.`, false);
+        } else {
+          setControlFeedback(`Read command queued.`, false);
+        }
+        loadResults();
+      } catch (err) {
+        setControlFeedback(`Read failed: ${err.message}`, true);
+      }
+      return;
+    }
     case 'spiffs_delete':
       if (!pathVal) {
         setControlFeedback('Please provide a path.', true);
@@ -849,20 +909,10 @@ async function handleControlSubmit(event) {
     case 'log_download': {
       setControlFeedback('Downloading log: 1. Checking status...', false);
       try {
-        // 1. Get status for offset
         const statusBody = { dn, payload: { log: { command: 'status' } } };
         const statusResp = await doSend(statusBody);
         let offset = 0;
         let maxBytes = 32768;
-        
-        // Wait for reply via polling (since it's async MQTT) or assume we can't reliably get it instantly?
-        // Actually, 'doSend' queues the command. We don't get the reply instantly in the HTTP response usually,
-        // unless it's a direct command. config_console uses MQTT. 
-        // Wait, 'send_filter_config.py' uses TCP directly to the device.
-        // config_console uses MQTT which is async.
-        // However, `data_receive.py` execute_command DOES return the "reply" if it can talk TCP to the device immediately!
-        // `execute_command` -> `send_config_payload` -> TCP.
-        // So yes, we get the reply in `statusResp.reply`.
         
         if (statusResp.reply && statusResp.reply.log) {
           offset = statusResp.reply.log.offset || 0;
@@ -871,7 +921,6 @@ async function handleControlSubmit(event) {
           setControlFeedback('Log status reply missing, assuming defaults.', false);
         }
         
-        // 2. Read log file
         setControlFeedback(`Downloading log: 2. Reading /log.txt (limit ${maxBytes})...`, false);
         const readBody = { dn, payload: { spiffs: { command: 'read', path: '/log.txt', limit: maxBytes } } };
         const readResp = await doSend(readBody);
@@ -880,7 +929,6 @@ async function handleControlSubmit(event) {
            throw new Error('No data_base64 in read response');
         }
         
-        // 3. Decode and reorder
         const binaryString = atob(readResp.reply.data_base64);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
@@ -888,10 +936,11 @@ async function handleControlSubmit(event) {
         }
         
         const ordered = reorderLogBytes(bytes, offset);
-        
-        // 4. Download
         triggerDownload(ordered, 'log_ordered.txt');
-        setControlFeedback('Log downloaded successfully.', false);
+        
+        const lastLine = extractLastLogLine(ordered);
+        setControlFeedback(`Log downloaded. Latest: ${lastLine}`, false);
+        
         loadResults();
         
       } catch (err) {
