@@ -386,7 +386,7 @@ function renderHistoryTable() {
     historyTableBody.innerHTML = '<tr><td colspan="4" class="table-empty">No data</td></tr>';
     return;
   }
-  state.results.forEach((item) => {
+  state.results.forEach((item, index) => {
     const replyStatus = (item.reply && item.reply.status) ? String(item.reply.status).toLowerCase() : '';
     const overallStatus = (item.status || replyStatus || '').toLowerCase();
     const isOk = overallStatus ? overallStatus === 'ok' : replyStatus === 'ok';
@@ -401,13 +401,56 @@ function renderHistoryTable() {
     const dnLabel = (payloadType === 'discover' || item.method === 'discover' || (item.dn || '').toUpperCase() === 'BROADCAST')
       ? 'broadcast'
       : (item.dn || '');
+
+    let extraHtml = '';
+    if (item.reply && typeof item.reply.data_base64 === 'string') {
+      const b64 = item.reply.data_base64;
+      const approxBytes = Math.round((b64.length * 3) / 4);
+      extraHtml = `<button class="ghost-btn download-btn" data-index="${index}" style="padding: 2px 8px; font-size: 0.8rem; margin-left: 8px;">Download (${approxBytes} B)</button>`;
+    }
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><span class="font-mono">${formatDateTime(item.timestamp)}</span></td>
       <td><code>${dnLabel}</code></td>
       <td class="${statusClass}">${statusLabel}</td>
-      <td><code>${detail}</code></td>
+      <td>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <code style="flex: 1;">${detail}</code>
+          ${extraHtml}
+        </div>
+      </td>
     `;
+    
+    if (extraHtml) {
+      const btn = tr.querySelector('.download-btn');
+      if (btn) {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const idx = parseInt(e.target.dataset.index, 10);
+          const dataItem = state.results[idx];
+          if (dataItem && dataItem.reply && dataItem.reply.data_base64) {
+            try {
+              const b64 = dataItem.reply.data_base64;
+              const binStr = atob(b64);
+              const bytes = new Uint8Array(binStr.length);
+              for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+              
+              let fname = 'download.bin';
+              if (dataItem.payload && dataItem.payload.spiffs && dataItem.payload.spiffs.path) {
+                 fname = dataItem.payload.spiffs.path.split('/').pop();
+              } else if (dataItem.payload && dataItem.payload.log) {
+                 fname = 'log.txt';
+              }
+              triggerDownload(bytes, fname);
+            } catch (err) {
+              alert(`Download failed: ${err.message}`);
+            }
+          }
+        });
+      }
+    }
+
     historyTableBody.appendChild(tr);
   });
 }
