@@ -21,4 +21,6 @@ license/priv.pem
 certs/*.crt
 certs/*.key
 certs/*.pem
+!certs/SCRoot2ca.cer
+!certs/*.cer
 mosquitto/config/passwordfile

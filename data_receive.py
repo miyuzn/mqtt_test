@@ -917,9 +917,25 @@ def mqtt_worker():
     if MQTT_TLS_ENABLED:
         tls_version = getattr(ssl, "PROTOCOL_TLS_CLIENT", ssl.PROTOCOL_TLSv1_2)
         ca = MQTT_CA_CERT
+        
+        # Auto-detect project-specific Root CA if not configured
+        if not ca:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            candidates = [
+                os.path.join(base_dir, "certs", "SCRoot2ca.cer"),
+                os.path.join("certs", "SCRoot2ca.cer"),
+                os.path.join(base_dir, "certs", "root_ca.cer"),
+                os.path.join("certs", "root_ca.cer"),
+            ]
+            for cand in candidates:
+                if os.path.exists(cand):
+                    ca = cand
+                    print(f"[BRIDGE/MQTT] Auto-loaded Root CA: {ca}")
+                    break
+        
         if not ca:
             # Fallback to certifi's bundle if no specific CA is configured
-            # 未配置具体 CA 时，自动使用 certifi 的标准根证书库
+            # 未配置具体 CA 且找不到本地预置证书时，使用 certifi
             ca = certifi.where()
         
         cert = MQTT_CLIENT_CERT or None
