@@ -79,6 +79,7 @@ services:
       - ./webapp:/app
       - ./license:/license
       - ./certs:/certs:ro
+      - ./ota_dist:/ota:ro  # OTA firmware directory (Read-Only)
     ports:
       - "443:5000"              # HTTPS (public)
       - "127.0.0.1:8443:5000"   # Loopback HTTPS (debug)

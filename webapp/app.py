@@ -17,6 +17,7 @@ from flask import (
     render_template,
     request,
     stream_with_context,
+    send_from_directory,
 )
 
 from config_backend import ConfigValidationError, build_config_service_from_env
@@ -244,6 +245,12 @@ def index() -> str:
         "index.html",
         bridge_api_base=BRIDGE_API_BASE_URL,
     )
+
+
+@app.route("/OTA/<path:filename>")
+def serve_ota_file(filename):
+    """Serve OTA firmware files from the mounted /ota directory."""
+    return send_from_directory("/ota", filename)
 
 
 @app.route("/api/latest")
