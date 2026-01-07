@@ -785,7 +785,10 @@ async function handleControlSubmit(event) {
   const selectpinVal = getNumeric(controlSelectInput);
   const startTimeVal = getNumeric(controlStartTimeInput);
   const calibTimeVal = getNumeric(controlCalibTimeInput);
-  const pathVal = (controlPathInput?.value || '').trim();
+  let pathVal = (controlPathInput?.value || '').trim();
+  if (pathVal.startsWith('/')) {
+    pathVal = pathVal.substring(1);
+  }
   const limitVal = getNumeric(controlLimitInput);
   const enabledChecked = controlEnabledCheckbox?.checked;
   const writeText = controlWriteText?.value || '';
