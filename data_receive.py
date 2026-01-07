@@ -25,6 +25,15 @@ import certifi  # Added for automatic CA loading
 # Parsing layout follows sensor2.parse_sensor_data (DN=6 bytes, SN=pressure channels, Mag/Gyro/Acc are float triples) / 解析逻辑与字段布局参考 sensor2.parse_sensor_data（DN=6字节，SN=压力通道数，Mag/Gyro/Acc为3f）
 import app.sensor2 as sensor2  # Ensure the module name matches sensor2.py in the same directory / 确保与同目录的 sensor2.py 同名
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
 # ======================
 # Configuration (read from config.ini, overridable via environment variables) / 配置（从 config.ini 读取，环境变量可覆盖）
 # ======================
@@ -920,18 +929,25 @@ def mqtt_worker():
         
         # Auto-detect project-specific Root CA if not configured
         if not ca:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            candidates = [
-                os.path.join(base_dir, "certs", "SCRoot2ca.cer"),
-                os.path.join("certs", "SCRoot2ca.cer"),
-                os.path.join(base_dir, "certs", "root_ca.cer"),
-                os.path.join("certs", "root_ca.cer"),
-            ]
-            for cand in candidates:
-                if os.path.exists(cand):
-                    ca = cand
-                    print(f"[BRIDGE/MQTT] Auto-loaded Root CA: {ca}")
-                    break
+            # 1. Try bundled resource (PyInstaller) or relative to script
+            bundled_ca = resource_path(os.path.join("certs", "SCRoot2ca.cer"))
+            if os.path.exists(bundled_ca):
+                 ca = bundled_ca
+                 print(f"[BRIDGE/MQTT] Auto-loaded Bundled Root CA: {ca}")
+            else:
+                # 2. Try external relative paths (classic dev mode)
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                candidates = [
+                    os.path.join(base_dir, "certs", "SCRoot2ca.cer"),
+                    os.path.join("certs", "SCRoot2ca.cer"),
+                    os.path.join(base_dir, "certs", "root_ca.cer"),
+                    os.path.join("certs", "root_ca.cer"),
+                ]
+                for cand in candidates:
+                    if os.path.exists(cand):
+                        ca = cand
+                        print(f"[BRIDGE/MQTT] Auto-loaded External Root CA: {ca}")
+                        break
         
         if not ca:
             # Fallback to certifi's bundle if no specific CA is configured
