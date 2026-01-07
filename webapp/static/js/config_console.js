@@ -962,11 +962,8 @@ async function handleControlSubmit(event) {
       payload = { log: { command: 'disable' } };
       break;
     case 'log_download': {
-      setControlFeedback('Downloading log via SPIFFS read...', false);
-      const pathVal = 'log.txt';
-      const limitVal = 32768;
-
-      payload = { spiffs: { command: 'read', path: pathVal, limit: limitVal } };
+      setControlFeedback('Downloading log (ordered by device)...', false);
+      payload = { log: { command: 'read' } };
 
       try {
         const resp = await doSend({ dn, payload });
