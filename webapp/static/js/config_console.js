@@ -729,6 +729,14 @@ function init() {
       manualIpInput.dataset.autoFilled = '0';
     });
   }
+  if (controlPathInput) {
+    controlPathInput.addEventListener('input', () => {
+      if (/[\/\\]/.test(controlPathInput.value)) {
+        controlPathInput.value = controlPathInput.value.replace(/[\/\\]/g, '');
+        setControlFeedback('Slashes and backslashes are not allowed in path.', true);
+      }
+    });
+  }
   if (controlForm) {
     controlForm.addEventListener('submit', handleControlSubmit);
     controlAction.addEventListener('change', () => updateControlVisibility(controlAction.value));
@@ -786,8 +794,9 @@ async function handleControlSubmit(event) {
   const startTimeVal = getNumeric(controlStartTimeInput);
   const calibTimeVal = getNumeric(controlCalibTimeInput);
   let pathVal = (controlPathInput?.value || '').trim();
-  if (pathVal.startsWith('/')) {
-    pathVal = pathVal.substring(1);
+  if (/[\/\\]/.test(pathVal)) {
+    setControlFeedback('Path cannot contain / or \\ characters.', true);
+    return;
   }
   const limitVal = getNumeric(controlLimitInput);
   const enabledChecked = controlEnabledCheckbox?.checked;
