@@ -2,9 +2,8 @@ param(
     [string]$OutDir = "certs",
     [int]$ValidDays = 825,
     [string]$CaCommonName = "mqtt_test-dev-ca",
-    [string[]]$MosquittoDnsNames = @("mosquitto", "localhost"),
+    [string[]]$MosquittoDnsNames = @("mosquitto", "localhost", "isensing-s1.u-aizu.ac.jp"),
     [string[]]$MosquittoIpAddresses = @("163.143.136.103"),
-    [string[]]$WebDnsNames = @("localhost"),
     [string[]]$WebIpAddresses = @("163.143.136.103"),
     [switch]$ReuseCa,
     [switch]$Force
