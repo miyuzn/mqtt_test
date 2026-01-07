@@ -19,6 +19,7 @@ import re
 import ipaddress
 from typing import Dict, Tuple, Optional
 import paho.mqtt.client as mqtt
+import certifi  # Added for automatic CA loading
 
 # ===== Added: load the updated parsing library / 新增：引入新版解析库 =====
 # Parsing layout follows sensor2.parse_sensor_data (DN=6 bytes, SN=pressure channels, Mag/Gyro/Acc are float triples) / 解析逻辑与字段布局参考 sensor2.parse_sensor_data（DN=6字节，SN=压力通道数，Mag/Gyro/Acc为3f）
@@ -915,7 +916,12 @@ def mqtt_worker():
 
     if MQTT_TLS_ENABLED:
         tls_version = getattr(ssl, "PROTOCOL_TLS_CLIENT", ssl.PROTOCOL_TLSv1_2)
-        ca = MQTT_CA_CERT or None
+        ca = MQTT_CA_CERT
+        if not ca:
+            # Fallback to certifi's bundle if no specific CA is configured
+            # 未配置具体 CA 时，自动使用 certifi 的标准根证书库
+            ca = certifi.where()
+        
         cert = MQTT_CLIENT_CERT or None
         key = MQTT_CLIENT_KEY or None
         client.tls_set(
