@@ -950,42 +950,26 @@ async function handleControlSubmit(event) {
       payload = { log: { command: 'disable' } };
       break;
     case 'log_download': {
-      setControlFeedback('Downloading log: 1. Checking status...', false);
+      setControlFeedback('Downloading log via SPIFFS read...', false);
+      const pathVal = 'log.txt';
+      const limitVal = 32768;
+
+      payload = { spiffs: { command: 'read', path: pathVal, limit: limitVal } };
+
       try {
-        const statusBody = { dn, payload: { log: { command: 'status' } } };
-        const statusResp = await doSend(statusBody);
-        let offset = 0;
-        let maxBytes = 32768;
-        
-        if (statusResp.reply && statusResp.reply.log) {
-          offset = statusResp.reply.log.offset || 0;
-          maxBytes = statusResp.reply.log.max_bytes || 32768;
+        const resp = await doSend({ dn, payload });
+        if (resp.reply && resp.reply.data_base64) {
+          const binaryString = atob(resp.reply.data_base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          triggerDownload(bytes, 'log.txt');
+          setControlFeedback(`Log downloaded (${bytes.length} bytes).`, false);
         } else {
-          setControlFeedback('Log status reply missing, assuming defaults.', false);
+          setControlFeedback(`Log read command queued.`, false);
         }
-        
-        setControlFeedback(`Downloading log: 2. Reading /log.txt (limit ${maxBytes})...`, false);
-        const readBody = { dn, payload: { spiffs: { command: 'read', path: '/log.txt', limit: maxBytes } } };
-        const readResp = await doSend(readBody);
-        
-        if (!readResp.reply || typeof readResp.reply.data_base64 !== 'string') {
-           throw new Error('No data_base64 in read response');
-        }
-        
-        const binaryString = atob(readResp.reply.data_base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        
-        const ordered = reorderLogBytes(bytes, offset);
-        triggerDownload(ordered, 'log_ordered.txt');
-        
-        const lastLine = extractLastLogLine(ordered);
-        setControlFeedback(`Log downloaded. Latest: ${lastLine}`, false);
-        
         loadResults();
-        
       } catch (err) {
         setControlFeedback(`Log download failed: ${err.message}`, true);
       }
