@@ -1119,11 +1119,20 @@ def main():
         )
         sys.exit(2)
     if MQTT_TLS_ENABLED and not MQTT_TLS_INSECURE and not MQTT_CA_CERT:
-        print(
-            "[BRIDGE/MQTT] WARNING: TLS_ENABLED=1 but CA_CERT is empty; "
-            "certificate verification may fail unless the CA is already trusted.",
-            file=sys.stderr,
-        )
+        # Check if we can auto-load a local CA before warning
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        has_local_ca = False
+        for cand in ["SCRoot2ca.cer", "root_ca.cer"]:
+             if os.path.exists(os.path.join(base_dir, "certs", cand)) or os.path.exists(os.path.join("certs", cand)):
+                 has_local_ca = True
+                 break
+        
+        if not has_local_ca:
+            print(
+                "[BRIDGE/MQTT] WARNING: TLS_ENABLED=1 but CA_CERT is empty; "
+                "certificate verification may fail unless the CA is already trusted.",
+                file=sys.stderr,
+            )
     gcu_manager.start()
     # Spin up UDP/MQTT/stats threads and keep looping until interrupted.
     # Start UDP, MQTT, and stats threads until interrupted / 启动 UDP、MQTT、统计线程并持续运行直到被中断。
