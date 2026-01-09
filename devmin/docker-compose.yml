@@ -28,7 +28,7 @@ services:
       SINK_FLUSH_EVERY_ROWS: 1
       SINK_ROOT_DIR: /workspace/data/mqtt_store
     volumes:
-      - ../backend:/workspace/app
+      - ../backend:/workspace/backend
       - ../server:/workspace/server
       - ../config.ini:/workspace/config.ini:ro
       - ./data/mqtt_store:/workspace/data/mqtt_store
@@ -51,7 +51,7 @@ services:
       SINK_FLUSH_EVERY_ROWS: 1
       SINK_ROOT_DIR: /workspace/data/mqtt_store
     volumes:
-      - ../backend:/workspace/app
+      - ../backend:/workspace/backend
       - ../config.ini:/workspace/config.ini:ro
       - ./data/mqtt_store:/workspace/data/mqtt_store
 
@@ -78,8 +78,8 @@ services:
       CONFIG_BROKER_PORT: 1883
     volumes:
       - ../server:/workspace/server
-      - ../web:/workspace/webapp
-      - ../backend:/workspace/app
+      - ../web:/workspace/web
+      - ../backend:/workspace/backend
       - ../license:/workspace/license
     ports:
       - "127.0.0.1:${DEVMIN_BRIDGE_PORT:-5001}:5001"

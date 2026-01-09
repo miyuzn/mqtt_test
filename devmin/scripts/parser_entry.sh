@@ -47,7 +47,7 @@ wait_for_port() {
 
 wait_for_port "127.0.0.1" "${MQTT_BROKER_PORT:-1883}"
 
-export PYTHONPATH="/workspace/app:/workspace/server:${PYTHONPATH:-}"
+export PYTHONPATH="/workspace/backend:/workspace/server:${PYTHONPATH:-}"
 
 log "starting raw_parser_service"
 python /workspace/server/raw_parser_service.py &

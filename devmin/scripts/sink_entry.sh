@@ -7,7 +7,7 @@ log() {
 
 trap 'exit 0' INT TERM
 
-export PYTHONPATH="/workspace/app:${PYTHONPATH:-}"
+export PYTHONPATH="/workspace/backend:${PYTHONPATH:-}"
 
 log "starting sink.py"
-python /workspace/app/sink.py
+python /workspace/backend/sink.py

@@ -33,7 +33,7 @@ stop_all() {
 
 trap 'stop_all; exit 0' INT TERM
 
-export PYTHONPATH="/workspace/server:/workspace/webapp:/workspace/app:${PYTHONPATH:-}"
+export PYTHONPATH="/workspace/server:/workspace/web:/workspace/backend:${PYTHONPATH:-}"
 start_forwarder
 
 log "starting bridge service"
@@ -41,7 +41,7 @@ python /workspace/server/bridge.py &
 BRIDGE_PID=$!
 
 log "starting Flask web UI"
-cd /workspace/webapp
+cd /workspace/web
 python app.py &
 WEB_PID=$!
 

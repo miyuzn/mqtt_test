@@ -41,7 +41,7 @@ class BridgeConfig:
         self.client_id = "mqtt-bridge"
         self.dn_field = "dn"
         self.http_port = 5001
-        self.config_path = os.getenv("BRIDGE_CONFIG", "/app/config.ini")
+        self.config_path = os.getenv("BRIDGE_CONFIG", "/backend/config.ini")
         self._load_from_file()
         self._override_from_env()
 

@@ -36,7 +36,7 @@ services:
       - CLIENT_ID=mqtt-bridge
       - BRIDGE_PORT=5001
     volumes:
-      - ./backend:/app
+      - ./backend:/backend
       - ./server:/server
     # 使用新建的组合启动脚本
     command: ["sh", "backend_entrypoint.sh"]
@@ -55,7 +55,7 @@ services:
       - USERNAME=
       - PASSWORD=
     volumes:
-      - ./backend:/app
+      - ./backend:/backend
     command: ["python", "sink.py"]
     # Sink 默认为 unless-stopped，如果希望仅手动启动，可以移除 restart 策略或改为 no
     restart: unless-stopped
@@ -76,7 +76,7 @@ services:
       - WEB_SSL_CERT=/certs/web.crt
       - WEB_SSL_KEY=/certs/web.key
     volumes:
-      - ./web:/app
+      - ./web:/web
       - ./license:/license
       - ./certs:/certs:ro
       - ./ota_dist:/ota:ro  # OTA firmware directory (Read-Only)

@@ -23,7 +23,7 @@ import certifi  # Added for automatic CA loading
 
 # ===== Added: load the updated parsing library / 新增：引入新版解析库 =====
 # Parsing layout follows sensor2.parse_sensor_data (DN=6 bytes, SN=pressure channels, Mag/Gyro/Acc are float triples) / 解析逻辑与字段布局参考 sensor2.parse_sensor_data（DN=6字节，SN=压力通道数，Mag/Gyro/Acc为3f）
-import app.sensor2 as sensor2  # Ensure the module name matches sensor2.py in the same directory / 确保与同目录的 sensor2.py 同名
+import backend.sensor2 as sensor2  # Ensure the module name matches sensor2.py in the same directory / 确保与同目录的 sensor2.py 同名
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
