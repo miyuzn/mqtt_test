@@ -10,7 +10,7 @@ RUN apt-get update && \
 
 WORKDIR /workspace
 
-COPY app/requirements.txt /tmp/app-requirements.txt
+COPY backend/requirements.txt /tmp/app-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/app-requirements.txt
 
 COPY devmin/scripts/sink_entry.sh /usr/local/bin/start-sink.sh

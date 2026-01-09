@@ -6,11 +6,11 @@ __pycache__/
 .vscode/
 
 # Docker volumes (logs/data if you don't want to commit)
-mosquitto/data/
-mosquitto/log/
+broker/data/
+broker/log/
 
 # sink data
-app/mqtt_store/
+backend/mqtt_store/
 devmin/data/
 
 # license
@@ -23,4 +23,4 @@ certs/*.key
 certs/*.pem
 !certs/SCRoot2ca.cer
 !certs/*.cer
-mosquitto/config/passwordfile
+broker/config/passwordfile

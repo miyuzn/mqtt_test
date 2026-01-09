@@ -10,10 +10,10 @@ RUN apt-get update && \
 
 WORKDIR /workspace
 
-COPY app/requirements.txt /tmp/app-requirements.txt
+COPY backend/requirements.txt /tmp/app-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/app-requirements.txt
 
-COPY mosquitto/config/mosquitto.conf /etc/mosquitto/mosquitto.conf
+COPY broker/config/mosquitto.conf /etc/mosquitto/mosquitto.conf
 COPY devmin/scripts/parser_entry.sh /usr/local/bin/start-parser-stack.sh
 RUN chmod +x /usr/local/bin/start-parser-stack.sh
 

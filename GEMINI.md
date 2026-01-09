@@ -7,13 +7,13 @@
 This is a full-stack IoT system designed to collect, parse, store, and visualize sensor data using MQTT.
 **Core Data Flow:**
 1.  **Sensors:** Publish raw binary/JSON data to `etx/v1/raw/#`.
-2.  **Backend (`app/`):**
+2.  **Backend (`backend/`):**
     - Subscribes to raw data.
     - Parses payloads (via `parser_service` or embedded logic).
     - Republishes parsed JSON to `etx/v1/parsed/#`.
     - Persists data to disk (`sink.py`).
 3.  **Bridge (`server/`):** Proxies MQTT messages to HTTP/SSE for the frontend.
-4.  **Web UI (`webapp/`):**
+4.  **Web UI (`web/`):**
     - **Dashboard:** Visualizes real-time data via Server-Sent Events (SSE).
     - **Config Console:** Manages device settings (discovery, IP config) via `config_backend.py`.
     - **License:** Handles feature activation via `license_backend.py`.
@@ -26,19 +26,19 @@ This is a full-stack IoT system designed to collect, parse, store, and visualize
 - `GEMINI.md`: This file.
 
 ### Modules
-- **`app/` (Backend Core)**
+- **`backend/` (Backend Core)**
     - `main_subscriber.py`: Entry point for data processing.
     - `sink.py`: Data storage worker.
     - `backend_entrypoint.sh`: Container startup script.
     - `utils.py`: Shared utilities.
-- **`webapp/` (Frontend & API)**
+- **`web/` (Frontend & API)**
     - `app.py`: Main Flask application (Gateway).
     - `config_backend.py`: MQTT service for device management (Discovery, Commands).
     - `license_backend.py`: License validation logic.
     - `static/`: JS/CSS assets (includes `dashboard.js`, `three.js` visualization).
 - **`server/` (Bridge)**
     - `bridge.py`: Legacy/Simple bridge service.
-- **`mosquitto/` (Broker)**
+- **`broker/` (Broker)**
     - `config/mosquitto.secure.conf`: Broker config (Ports: 1883 Internal, 8883 TLS).
 - **`certs/`**: TLS certificates for secure MQTT communication.
 - **`devmin/`**: Minimal development environments and scripts.
@@ -60,11 +60,11 @@ The standard runtime uses secure MQTT.
     ```bash
     python -m venv .venv
     source .venv/bin/activate  # or .venv\Scripts\activate
-    pip install -r app/requirements.txt -r webapp/requirements.txt
+    pip install -r backend/requirements.txt -r web/requirements.txt
     ```
 *   **Running Components:**
     Ensure `BROKER_HOST` environment variable is set correctly (e.g., `localhost`).
-    *   Web: `python webapp/app.py`
+    *   Web: `python web/app.py`
     *   Bridge: `python server/bridge.py`
 
 ## 4. Coding Conventions & Language

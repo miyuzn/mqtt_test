@@ -6,14 +6,14 @@ services:
     ports:
       - "8883:8883"   # Secure MQTT (TLS)
     volumes:
-      - ./mosquitto/config:/mosquitto/config
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
+      - ./broker/config:/mosquitto/config
+      - ./broker/data:/mosquitto/data
+      - ./broker/log:/mosquitto/log
       - ./certs:/mosquitto/certs:ro
     command: ["mosquitto", "-c", "/mosquitto/config/mosquitto.secure.conf"]
 
   backend:
-    build: ./app
+    build: ./backend
     container_name: mqtt-backend
     depends_on:
       - broker
@@ -36,14 +36,14 @@ services:
       - CLIENT_ID=mqtt-bridge
       - BRIDGE_PORT=5001
     volumes:
-      - ./app:/app
+      - ./backend:/app
       - ./server:/server
     # 使用新建的组合启动脚本
     command: ["sh", "backend_entrypoint.sh"]
     restart: unless-stopped
 
   sink:
-    build: ./app
+    build: ./backend
     container_name: mqtt-sink
     depends_on:
       - broker
@@ -55,13 +55,13 @@ services:
       - USERNAME=
       - PASSWORD=
     volumes:
-      - ./app:/app
+      - ./backend:/app
     command: ["python", "sink.py"]
     # Sink 默认为 unless-stopped，如果希望仅手动启动，可以移除 restart 策略或改为 no
     restart: unless-stopped
 
   web:
-    build: ./webapp
+    build: ./web
     container_name: mqtt-web
     depends_on:
       - backend
@@ -76,7 +76,7 @@ services:
       - WEB_SSL_CERT=/certs/web.crt
       - WEB_SSL_KEY=/certs/web.key
     volumes:
-      - ./webapp:/app
+      - ./web:/app
       - ./license:/license
       - ./certs:/certs:ro
       - ./ota_dist:/ota:ro  # OTA firmware directory (Read-Only)
