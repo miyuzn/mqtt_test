@@ -173,6 +173,7 @@ class StoreManager:
         self.inactivity_timeout_sec = inactivity_timeout_sec
         # 按 DN 维护当前会话：dn_hex -> {"day": "YYYYMMDD", "handle": CsvHandle, "last_seen": datetime, "sn": int}
         self.sessions: Dict[str, Dict[str, object]] = {}
+        self._lock = threading.RLock()
 
     @staticmethod
     def _resolve_event_time(ts: float, fallback: datetime) -> datetime:
@@ -201,6 +202,7 @@ class StoreManager:
         return self.root / dn_hex / day / f"{now_str}.csv"
 
     def _open_new_session(self, dn_hex: str, sn: int, when: datetime):
+        # Must be called within lock
         # 关闭旧句柄（若有）
         s = self.sessions.get(dn_hex)
         if s and s.get("handle"):
@@ -218,6 +220,7 @@ class StoreManager:
         return h
 
     def _get_handle_for_write(self, dn_hex: str, sn: int, when: datetime) -> CsvHandle:
+        # Must be called within lock
         day = when.strftime("%Y%m%d")
         s = self.sessions.get(dn_hex)
 
@@ -247,19 +250,59 @@ class StoreManager:
 
     def write(self, dn_hex: str, sn: int, ts: float, pressures, mag, gyro, acc, ingest_time: datetime):
         event_time = self._resolve_event_time(ts, ingest_time)
-        h = self._get_handle_for_write(dn_hex, sn, event_time)
-        h.write_row(ts, pressures, mag, gyro, acc, self.flush_every_rows)
-        # 更新 last_seen
-        sess = self.sessions[dn_hex]
-        sess["last_seen"] = event_time
+        with self._lock:
+            h = self._get_handle_for_write(dn_hex, sn, event_time)
+            h.write_row(ts, pressures, mag, gyro, acc, self.flush_every_rows)
+            # 更新 last_seen
+            sess = self.sessions[dn_hex]
+            sess["last_seen"] = event_time
+
+    def close_session(self, dn_hex: str):
+        with self._lock:
+            s = self.sessions.get(dn_hex)
+            if s:
+                h = s.get("handle")
+                if h:
+                    try: h.close()
+                    except Exception: pass
+                del self.sessions[dn_hex]
+                # print(f"[Store] Closed session for {dn_hex} by request")
+
+    def check_timeouts(self):
+        """Actively close sessions that have been idle for too long.
+        主动检查并关闭空闲超时的会话。
+        """
+        now = datetime.now(JST)
+        with self._lock:
+            # Collect keys to remove to avoid modifying dict while iterating
+            to_remove = []
+            for dn_hex, sess in self.sessions.items():
+                last_seen = sess.get("last_seen")
+                if not last_seen:
+                    continue
+                idle = (now - last_seen).total_seconds()
+                if idle >= self.inactivity_timeout_sec:
+                    # Close and mark for removal
+                    h = sess.get("handle")
+                    if h:
+                        try:
+                            h.close()
+                        except Exception:
+                            pass
+                    to_remove.append(dn_hex)
+            
+            for k in to_remove:
+                del self.sessions[k]
+                # print(f"[Store] Closed idle session for {k}")
 
     def close_all(self):
-        for s in self.sessions.values():
-            h = s.get("handle")
-            if h: 
-                try: h.close()
-                except Exception: pass
-        self.sessions.clear()
+        with self._lock:
+            for s in self.sessions.values():
+                h = s.get("handle")
+                if h: 
+                    try: h.close()
+                    except Exception: pass
+            self.sessions.clear()
 
 # ========== JSON 解析 ==========
 def parse_json_payload(b: bytes, cfg: dict):
@@ -344,6 +387,7 @@ class MqttSink:
                         print("[CTRL] Recording STARTED for ALL devices")
                     else:
                         self._recording_dns.clear()
+                        self.store.close_all()
                         print("[CTRL] Recording STOPPED for ALL devices")
                 elif dn_raw:
                     dn_hex = dn_to_hex(dn_raw)
@@ -352,6 +396,7 @@ class MqttSink:
                         print(f"[CTRL] Recording STARTED for {dn_hex}")
                     else:
                         self._recording_dns.discard(dn_hex)
+                        self.store.close_session(dn_hex)
                         print(f"[CTRL] Recording STOPPED for {dn_hex}")
             except Exception as e:
                 print(f"[CTRL] Failed to parse control message: {e}")
@@ -402,7 +447,8 @@ class MqttSink:
         self.client.loop_start()
         try:
             while self._running:
-                time.sleep(0.2)
+                time.sleep(1.0)  # 主循环 1秒检查一次超时
+                self.store.check_timeouts()
         finally:
             self.client.loop_stop(); self.client.disconnect(); self.store.close_all()
             print("[MAIN] sink stopped.")
