@@ -14,7 +14,7 @@ MQTT sink that focuses on JSON payloads but still accepts legacy binary frames:
 - Legacy binary frames (A5A...A5A5) are parsed via sensor2.parse_sensor_data
 """
 
-import os, sys, csv, json, time, signal, pathlib, configparser
+import os, sys, csv, json, time, signal, pathlib, configparser, threading
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Tuple, Optional
 
