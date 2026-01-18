@@ -603,6 +603,7 @@
       }
 
       async function toggleRecord(dn, shouldRecord) {
+          if (!dn) return;
           try {
               const resp = await fetch("/api/record", {
                   method: "POST",
@@ -1570,6 +1571,11 @@
       function applyEntry(entry, options = {}) {
           const normalized = normalizeEntry(entry);
           if (!normalized) return;
+
+          // Ensure recording state is initialized to false for new devices
+          if (!recordingStateByDevice.has(normalized.dn)) {
+              recordingStateByDevice.set(normalized.dn, false);
+          }
           
           const existing = state.get(normalized.dn);
           if (existing) {
