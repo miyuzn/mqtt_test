@@ -376,6 +376,9 @@ class MqttSink:
     def on_message(self, client, userdata, msg):
         # Handle Control Messages
         if mqtt.topic_matches_sub(self.cfg["MQTT_CONTROL_TOPIC"], msg.topic):
+            if msg.retain:
+                print(f"[CTRL] Ignored retained message on {msg.topic}")
+                return
             try:
                 payload = json.loads(msg.payload.decode("utf-8"))
                 dn_raw = payload.get("dn")
