@@ -226,6 +226,7 @@
       const state = new Map();
       const mirrorSettingsByDevice = new Map();
       const recordingStateByDevice = new Map();
+      let isGlobalRecording = false;
       const STALE_THRESHOLD_MS = 30 * 1000;
       
       // Dynamic Panels Management
@@ -613,6 +614,7 @@
               if (!resp.ok) throw new Error(`API Error: ${resp.status}`);
               
               if (dn === "ALL") {
+                  isGlobalRecording = shouldRecord;
                   // Optimistically update all known devices
                   const allDns = Array.from(state.keys());
                   allDns.forEach(d => recordingStateByDevice.set(d, shouldRecord));
@@ -1574,7 +1576,7 @@
 
           // Ensure recording state is initialized to false for new devices
           if (!recordingStateByDevice.has(normalized.dn)) {
-              recordingStateByDevice.set(normalized.dn, false);
+              recordingStateByDevice.set(normalized.dn, isGlobalRecording);
           }
           
           const existing = state.get(normalized.dn);
