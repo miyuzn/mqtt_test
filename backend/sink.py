@@ -58,7 +58,7 @@ def load_config() -> dict:
         "QOS":              1,
         "ROOT_DIR":         "./mqtt_store",
         "FLUSH_EVERY_ROWS": 200,
-        "INACT_TIMEOUT_SEC": 5,  # 会话空闲超时（秒），超过则新文件
+        "INACT_TIMEOUT_SEC": 20,  # 会话空闲超时（秒），超过则新文件
         # JSON 字段映射（可在 config.ini 覆盖）
         "F_DN":      "dn",         # 设备号（int/hex str/bytes/数组均可）
         "F_SN":      "sn",         # 压力点数量（可缺省）
@@ -171,7 +171,7 @@ class StoreManager:
     """Allocate CSV writers on demand and rotate based on time/session rules.
     根据时间/会话规则按需分配 CSV 写入句柄。
     """
-    def __init__(self, root_dir, flush_every_rows, inactivity_timeout_sec: int = 5):
+    def __init__(self, root_dir, flush_every_rows, inactivity_timeout_sec: int = 20):
         self.root = pathlib.Path(root_dir)
         self.flush_every_rows = flush_every_rows
         self.inactivity_timeout_sec = inactivity_timeout_sec
