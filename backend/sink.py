@@ -143,7 +143,7 @@ class CsvHandle:
         self.writer = csv.writer(self.f)
         if new_file:
             self.writer.writerow([f"// DN: {self.dn_hex}, SN: {self.sn}"])
-            header = (["Timestamp"]
+            header = (["Date_Time", "Timestamp"]
                       + [f"P{i+1}" for i in range(self.sn)]
                       + ["Mag_x","Mag_y","Mag_z","Gyro_x","Gyro_y","Gyro_z","Acc_x","Acc_y","Acc_z"])
             self.writer.writerow(header); self.f.flush()
@@ -156,7 +156,11 @@ class CsvHandle:
             base = list(x) if isinstance(x, (list, tuple)) else list(x or [0,0,0])
             base += [0,0,0]
             return base[:3]
-        row = [ts] + p + v3(mag) + v3(gyro) + v3(acc)
+        
+        # Format timestamp to string
+        dt_str = datetime.fromtimestamp(ts, JST).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        
+        row = [dt_str, ts] + p + v3(mag) + v3(gyro) + v3(acc)
         self.writer.writerow(row); self.rows_since_flush += 1
         if self.rows_since_flush >= flush_every: self.f.flush(); self.rows_since_flush = 0
 
@@ -384,23 +388,19 @@ class MqttSink:
                 dn_raw = payload.get("dn")
                 should_record = bool(payload.get("record"))
                 
-                if dn_raw == "ALL":
-                    if should_record:
-                        self._recording_dns.add("*ALL*")
-                        print("[CTRL] Recording STARTED for ALL devices")
-                    else:
-                        self._recording_dns.clear()
-                        self.store.close_all()
-                        print("[CTRL] Recording STOPPED for ALL devices")
-                elif dn_raw:
+                if dn_raw:
                     dn_hex = dn_to_hex(dn_raw)
-                    if should_record:
-                        self._recording_dns.add(dn_hex)
-                        print(f"[CTRL] Recording STARTED for {dn_hex}")
+                    # Ignore "ALL" requests for safety/multi-select logic
+                    if dn_hex == "ALL":
+                         print(f"[CTRL] Ignored 'ALL' record request (deprecated).")
                     else:
-                        self._recording_dns.discard(dn_hex)
-                        self.store.close_session(dn_hex)
-                        print(f"[CTRL] Recording STOPPED for {dn_hex}")
+                        if should_record:
+                            self._recording_dns.add(dn_hex)
+                            print(f"[CTRL] Recording STARTED for {dn_hex}")
+                        else:
+                            self._recording_dns.discard(dn_hex)
+                            self.store.close_session(dn_hex)
+                            print(f"[CTRL] Recording STOPPED for {dn_hex}")
             except Exception as e:
                 print(f"[CTRL] Failed to parse control message: {e}")
             return
@@ -409,7 +409,7 @@ class MqttSink:
         frames = None
         
         def is_recording(dn):
-            return "*ALL*" in self._recording_dns or dn in self._recording_dns
+            return dn in self._recording_dns
 
         # 1) JSON takes priority because it already matches the CSV schema.
         # 首选 JSON 负载，因为字段布局与 CSV 完全一致。

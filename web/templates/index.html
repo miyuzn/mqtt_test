@@ -49,19 +49,19 @@
               </button>
             </div>
             <div class="col-12 col-md-auto border-start ps-md-3 d-flex gap-2">
-                <button class="btn btn-sm btn-outline-danger" id="global-record-start" title="Start Recording All">
+                <button class="btn btn-sm btn-outline-danger" id="multi-record-start" title="Record Selected">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-record-circle" viewBox="0 0 16 16">
                       <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
                       <path d="M11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
                     </svg>
-                    <span class="d-none d-lg-inline ms-1" data-i18n="actions.record_all_start">Rec All</span>
+                    <span class="d-none d-lg-inline ms-1" data-i18n="actions.record_selected_start">Rec Selected</span>
                 </button>
-                <button class="btn btn-sm btn-outline-secondary" id="global-record-stop" title="Stop Recording All">
+                <button class="btn btn-sm btn-outline-secondary" id="multi-record-stop" title="Stop Selected">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-stop-circle" viewBox="0 0 16 16">
                       <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
                       <path d="M5 6.5A1.5 1.5 0 0 1 6.5 5h3A1.5 1.5 0 0 1 11 6.5v3A1.5 1.5 0 0 1 9.5 11h-3A1.5 1.5 0 0 1 5 9.5v-3z"/>
                     </svg>
-                    <span class="d-none d-lg-inline ms-1" data-i18n="actions.record_all_stop">Stop All</span>
+                    <span class="d-none d-lg-inline ms-1" data-i18n="actions.record_selected_stop">Stop Selected</span>
                 </button>
             </div>
             <div class="col-12 col-md-auto">
@@ -103,6 +103,9 @@
             <table class="table table-striped align-middle" id="device-table">
               <thead class="table-light sticky-top">
                 <tr>
+                  <th scope="col" class="text-center" style="width: 40px;">
+                    <input class="form-check-input" type="checkbox" id="select-all-devices" />
+                  </th>
                   <th scope="col" data-i18n="table.headers.dn">DN</th>
                   <th scope="col" data-i18n="table.headers.count">Sensors</th>
                   <th scope="col" data-i18n="table.headers.frame_time">Latest Frame</th>
@@ -224,6 +227,7 @@
       const STREAM_ENDPOINT = "{{ url_for('proxy_stream') }}";
 
       const state = new Map();
+      const selectedDns = new Set();
       const mirrorSettingsByDevice = new Map();
       const recordingStateByDevice = new Map();
       let isGlobalRecording = false;
@@ -245,8 +249,9 @@
       const languageButtons = document.querySelectorAll("#language-switcher [data-lang]");
       const addPanelBtn = document.getElementById("add-panel-btn");
       const copToggle = document.getElementById("cop-toggle");
-      const globalRecordStartBtn = document.getElementById("global-record-start");
-      const globalRecordStopBtn = document.getElementById("global-record-stop");
+      const multiRecordStartBtn = document.getElementById("multi-record-start");
+      const multiRecordStopBtn = document.getElementById("multi-record-stop");
+      const selectAllCheckbox = document.getElementById("select-all-devices");
 
       const panelRenderCache = new Map();
       const DEFAULT_RANGE_MIN = 300;
@@ -296,8 +301,8 @@
           "controls.waiting": "等待数据...",
           "controls.show_cop": "显示 COP",
           "actions.add_panel": "+ 添加设备视图",
-          "actions.record_all_start": "全部录制",
-          "actions.record_all_stop": "停止录制",
+          "actions.record_selected_start": "录制选中",
+          "actions.record_selected_stop": "停止选中",
           "actions.reset": "重置",
           "overview.gyro": "陀螺仪 (°/s)",
           "overview.acc": "加速度 (m/s²)",
@@ -335,8 +340,8 @@
           "controls.waiting": "データ待機中...",
           "controls.show_cop": "COPを表示",
           "actions.add_panel": "+ デバイス表示を追加",
-          "actions.record_all_start": "全録画開始",
-          "actions.record_all_stop": "全録画停止",
+          "actions.record_selected_start": "選択録画開始",
+          "actions.record_selected_stop": "選択録画停止",
           "actions.reset": "リセット",
           "overview.gyro": "ジャイロ (°/s)",
           "overview.acc": "加速度 (m/s²)",
@@ -374,8 +379,8 @@
           "controls.waiting": "Waiting for data...",
           "controls.show_cop": "Show COP",
           "actions.add_panel": "+ Add Device View",
-          "actions.record_all_start": "Rec All",
-          "actions.record_all_stop": "Stop All",
+          "actions.record_selected_start": "Rec Selected",
+          "actions.record_selected_stop": "Stop Selected",
           "actions.reset": "Reset",
           "overview.gyro": "Gyroscope (°/s)",
           "overview.acc": "Acceleration (m/s²)",
@@ -596,11 +601,27 @@
           panels.forEach(applyCOPStateToPanel);
       });
 
-      if (globalRecordStartBtn) {
-          globalRecordStartBtn.addEventListener('click', () => toggleRecord("ALL", true));
+      if (multiRecordStartBtn) {
+          multiRecordStartBtn.addEventListener('click', () => {
+             selectedDns.forEach(dn => toggleRecord(dn, true));
+          });
       }
-      if (globalRecordStopBtn) {
-          globalRecordStopBtn.addEventListener('click', () => toggleRecord("ALL", false));
+      if (multiRecordStopBtn) {
+          multiRecordStopBtn.addEventListener('click', () => {
+             selectedDns.forEach(dn => toggleRecord(dn, false));
+          });
+      }
+      if (selectAllCheckbox) {
+          selectAllCheckbox.addEventListener('change', (e) => {
+              const checked = e.target.checked;
+              const boxes = document.querySelectorAll(".device-select-box");
+              boxes.forEach(box => {
+                  box.checked = checked;
+                  const dn = box.dataset.dn;
+                  if (checked) selectedDns.add(dn);
+                  else selectedDns.delete(dn);
+              });
+          });
       }
 
       async function toggleRecord(dn, shouldRecord) {
@@ -613,19 +634,13 @@
               });
               if (!resp.ok) throw new Error(`API Error: ${resp.status}`);
               
-              if (dn === "ALL") {
-                  isGlobalRecording = shouldRecord;
-                  // Optimistically update all known devices
-                  const allDns = Array.from(state.keys());
-                  allDns.forEach(d => recordingStateByDevice.set(d, shouldRecord));
-              } else {
-                  recordingStateByDevice.set(dn, shouldRecord);
-              }
+              recordingStateByDevice.set(dn, shouldRecord);
+              
               // Refresh UI
               panels.forEach(updatePanelRecordingState);
           } catch (err) {
               console.error("Failed to toggle record:", err);
-              alert("Failed to toggle recording. Check console/logs.");
+              // alert("Failed to toggle recording. Check console/logs.");
           }
       }
 
@@ -1432,7 +1447,13 @@
             const tr = document.createElement("tr");
             const isStale = !entry.receivedAt || now - entry.receivedAt > STALE_THRESHOLD_MS;
             if (isStale) tr.classList.add("text-muted");
+            
+            const isSelected = selectedDns.has(entry.dn);
+            
             tr.innerHTML = `
+              <td class="text-center">
+                <input class="form-check-input device-select-box" type="checkbox" data-dn="${entry.dn}" ${isSelected ? 'checked' : ''} />
+              </td>
               <td><code>${entry.dn}</code></td>
               <td>${entry.sensorCount ?? "--"}</td>
               <td>${entry.frameTime ? new Date(entry.frameTime).toLocaleString() : "--"}</td>
@@ -1441,6 +1462,13 @@
                 <button type="button" class="btn btn-sm btn-outline-danger remove-device" data-dn="${entry.dn}">${stopLabel}</button>
               </td>
             `;
+            
+            const checkbox = tr.querySelector(".device-select-box");
+            checkbox.addEventListener("change", (e) => {
+                if (e.target.checked) selectedDns.add(entry.dn);
+                else selectedDns.delete(entry.dn);
+            });
+            
             tr.querySelector(".remove-device").addEventListener("click", (e) => {
                 e.stopPropagation();
                 removeDevice(entry.dn);
@@ -1576,7 +1604,7 @@
 
           // Ensure recording state is initialized to false for new devices
           if (!recordingStateByDevice.has(normalized.dn)) {
-              recordingStateByDevice.set(normalized.dn, isGlobalRecording);
+              recordingStateByDevice.set(normalized.dn, false);
           }
           
           const existing = state.get(normalized.dn);
