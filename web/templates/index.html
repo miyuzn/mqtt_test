@@ -529,8 +529,18 @@
         }
         
         panel.deviceSelector.addEventListener('change', (e) => {
+            const oldDevice = panel.selectedDevice;
             panel.selectedDevice = e.target.value || null;
             panel.deviceOptionsCache.selected = panel.selectedDevice;
+
+            // If the old device is no longer on any panel, remove it from selection
+            if (oldDevice && oldDevice !== panel.selectedDevice) {
+                const stillVisible = panels.some(p => p.selectedDevice === oldDevice);
+                if (!stillVisible) {
+                    selectedDns.delete(oldDevice);
+                }
+            }
+
             syncPanelMirrorControls(panel);
             updateLayoutOptionsForPanel(panel);
             updatePanelSensors(panel);
@@ -583,6 +593,14 @@
             if (panelToRemove.three.material) panelToRemove.three.material.dispose();
             panelToRemove.three.renderer.dispose();
             panelToRemove.three = null;
+        }
+
+        // Deselect device if no longer displayed
+        if (panelToRemove.selectedDevice) {
+            const isUsedElsewhere = panels.some(p => p !== panelToRemove && p.selectedDevice === panelToRemove.selectedDevice);
+            if (!isUsedElsewhere) {
+                selectedDns.delete(panelToRemove.selectedDevice);
+            }
         }
 
         panelToRemove.rootElement.remove();
