@@ -684,10 +684,10 @@
         }
         const pairs = [];
         basePairs.forEach(([rows, cols]) => {
-          if (rows <= 12 && cols <= 12) {
+          if (rows <= 16 && cols <= 16) {
             pairs.push([rows, cols]);
           }
-          if (rows !== cols && cols <= 12 && rows <= 12) {
+          if (rows !== cols && cols <= 16 && rows <= 16) {
             pairs.push([cols, rows]);
           }
         });
@@ -1090,6 +1090,7 @@
           if (disabled) {
               panel.recordBtn.classList.remove("btn-danger", "pulsing-record");
               panel.recordBtn.classList.add("btn-outline-danger");
+              if (panel.removeBtn) panel.removeBtn.disabled = false;
               return;
           }
           
@@ -1106,6 +1107,11 @@
           if (panel.selectCheckbox) {
               panel.selectCheckbox.checked = panel.selectedDevice && selectedDns.has(panel.selectedDevice);
               panel.selectCheckbox.disabled = !panel.selectedDevice;
+          }
+
+          // Disable remove button if recording to prevent orphan state
+          if (panel.removeBtn) {
+              panel.removeBtn.disabled = isRecording;
           }
       }
       
