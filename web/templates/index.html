@@ -103,9 +103,6 @@
             <table class="table table-striped align-middle" id="device-table">
               <thead class="table-light sticky-top">
                 <tr>
-                  <th scope="col" class="text-center" style="width: 40px;">
-                    <input class="form-check-input" type="checkbox" id="select-all-devices" />
-                  </th>
                   <th scope="col" data-i18n="table.headers.dn">DN</th>
                   <th scope="col" data-i18n="table.headers.count">Sensors</th>
                   <th scope="col" data-i18n="table.headers.frame_time">Latest Frame</th>
@@ -126,7 +123,10 @@
             <div class="card shadow-sm h-100 device-panel-card">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h3 class="h6 mb-0 js-panel-title" data-i18n="controls.device">Device</h3>
+                        <div class="d-flex align-items-center gap-2">
+                            <input class="form-check-input js-panel-select" type="checkbox" title="Select for Multi-Record" />
+                            <h3 class="h6 mb-0 js-panel-title" data-i18n="controls.device">Device</h3>
+                        </div>
                         <div class="d-flex gap-2">
                             <button class="btn btn-sm btn-outline-danger js-record-btn" aria-label="Record" disabled>
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-record-circle" viewBox="0 0 16 16">
@@ -251,7 +251,6 @@
       const copToggle = document.getElementById("cop-toggle");
       const multiRecordStartBtn = document.getElementById("multi-record-start");
       const multiRecordStopBtn = document.getElementById("multi-record-stop");
-      const selectAllCheckbox = document.getElementById("select-all-devices");
 
       const panelRenderCache = new Map();
       const DEFAULT_RANGE_MIN = 300;
@@ -484,6 +483,7 @@
             mirrorColsToggle: root.querySelector('.js-mirror-cols'),
             removeBtn: root.querySelector('.js-remove-panel-btn'),
             recordBtn: root.querySelector('.js-record-btn'),
+            selectCheckbox: root.querySelector('.js-panel-select'),
             copSection: root.querySelector('.js-cop-section'),
             copBoard: root.querySelector('.js-cop-board'),
             copDot: root.querySelector('.js-cop-dot'),
@@ -514,6 +514,12 @@
         // Event Listeners
         panel.removeBtn.addEventListener('click', () => removePanel(panel));
         
+        panel.selectCheckbox.addEventListener('change', (e) => {
+            if (!panel.selectedDevice) return;
+            if (e.target.checked) selectedDns.add(panel.selectedDevice);
+            else selectedDns.delete(panel.selectedDevice);
+        });
+
         if (panel.recordBtn) {
             panel.recordBtn.addEventListener('click', () => {
                 if (!panel.selectedDevice) return;
@@ -609,18 +615,6 @@
       if (multiRecordStopBtn) {
           multiRecordStopBtn.addEventListener('click', () => {
              selectedDns.forEach(dn => toggleRecord(dn, false));
-          });
-      }
-      if (selectAllCheckbox) {
-          selectAllCheckbox.addEventListener('change', (e) => {
-              const checked = e.target.checked;
-              const boxes = document.querySelectorAll(".device-select-box");
-              boxes.forEach(box => {
-                  box.checked = checked;
-                  const dn = box.dataset.dn;
-                  if (checked) selectedDns.add(dn);
-                  else selectedDns.delete(dn);
-              });
           });
       }
 
@@ -1089,6 +1083,12 @@
               panel.recordBtn.classList.remove("btn-danger", "pulsing-record");
               panel.recordBtn.classList.add("btn-outline-danger");
           }
+          
+          // Sync select checkbox with selectedDns
+          if (panel.selectCheckbox) {
+              panel.selectCheckbox.checked = panel.selectedDevice && selectedDns.has(panel.selectedDevice);
+              panel.selectCheckbox.disabled = !panel.selectedDevice;
+          }
       }
       
       function setPanelPlaceholder(panel, key) {
@@ -1448,12 +1448,7 @@
             const isStale = !entry.receivedAt || now - entry.receivedAt > STALE_THRESHOLD_MS;
             if (isStale) tr.classList.add("text-muted");
             
-            const isSelected = selectedDns.has(entry.dn);
-            
             tr.innerHTML = `
-              <td class="text-center">
-                <input class="form-check-input device-select-box" type="checkbox" data-dn="${entry.dn}" ${isSelected ? 'checked' : ''} />
-              </td>
               <td><code>${entry.dn}</code></td>
               <td>${entry.sensorCount ?? "--"}</td>
               <td>${entry.frameTime ? new Date(entry.frameTime).toLocaleString() : "--"}</td>
@@ -1462,12 +1457,6 @@
                 <button type="button" class="btn btn-sm btn-outline-danger remove-device" data-dn="${entry.dn}">${stopLabel}</button>
               </td>
             `;
-            
-            const checkbox = tr.querySelector(".device-select-box");
-            checkbox.addEventListener("change", (e) => {
-                if (e.target.checked) selectedDns.add(entry.dn);
-                else selectedDns.delete(entry.dn);
-            });
             
             tr.querySelector(".remove-device").addEventListener("click", (e) => {
                 e.stopPropagation();

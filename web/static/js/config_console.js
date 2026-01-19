@@ -1,11 +1,25 @@
-const ANALOG_PRESETS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-const SELECT_PRESETS = [17, 18, 19, 20, 21, 35, 36, 37, 39, 40, 41, 42, 45];
 const API_BASE = '';
 const PCB_MODELS = {
+  'v2.3.d': '/static/images/v2.3.d.png',
   'v2.2.c': '/static/images/v2.2.c.png',
   'v2.1': '/static/images/v2.1.png',
 };
 const DEFAULT_MODEL = 'v2.2.c';
+
+const MODEL_PIN_CONFIG = {
+  'v2.3.d': {
+    analog: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    select: [16, 17, 18, 19, 20, 21, 35, 36, 37, 39, 40, 41, 42, 45, 46]
+  },
+  'v2.2.c': {
+    analog: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    select: [18, 19, 20, 21, 35, 36, 37, 39, 40, 41, 42, 45]
+  },
+  'v2.1': {
+    analog: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    select: [18, 19, 20, 21, 35, 36, 37, 39, 40, 41, 42, 45]
+  }
+};
 
 const deviceSelect = document.getElementById('device-select');
 const refreshDevicesBtn = document.getElementById('refresh-devices');
@@ -262,6 +276,24 @@ const updateModelPreview = () => {
   const src = PCB_MODELS[model] || PCB_MODELS[DEFAULT_MODEL];
   pcbPreview.src = src;
   pcbPreview.alt = `PCB layout preview (${model})`;
+  updatePinOptions(model);
+};
+
+const updatePinOptions = (model) => {
+  const config = MODEL_PIN_CONFIG[model] || MODEL_PIN_CONFIG[DEFAULT_MODEL];
+  if (!config) return;
+  
+  // Clear inputs if they contain invalid pins for the new model?
+  // For now, let's just re-render the buttons. The user can clear manually or we can filter.
+  // Ideally, we keep valid selections.
+  
+  renderPinButtons('analog-grid', config.analog, 'analog-input');
+  renderPinButtons('select-grid', config.select, 'select-input');
+  
+  // Re-sync button states with current input values (filtering out invalid ones potentially?)
+  // For safety, let's just sync visually.
+  syncPinButtons('analog-input');
+  syncPinButtons('select-input');
 };
 
 const selectionLabels = {
@@ -696,14 +728,14 @@ function updateControlVisibility(action) {
 
 function init() {
   applyLicenseDefaults();
-  renderPinButtons('analog-grid', ANALOG_PRESETS, 'analog-input');
-  renderPinButtons('select-grid', SELECT_PRESETS, 'select-input');
-  syncPinButtons('analog-input');
-  syncPinButtons('select-input');
+  // Pin buttons are now rendered via updateModelPreview -> updatePinOptions
   deviceSelect.addEventListener('change', onDeviceChange);
   if (modelSelect) {
     modelSelect.addEventListener('change', updateModelPreview);
-    updateModelPreview();
+    updateModelPreview(); // This will trigger initial pin rendering
+  } else {
+    // Fallback if no model select exists (shouldn't happen given the HTML)
+    updatePinOptions(DEFAULT_MODEL);
   }
   refreshDevicesBtn.addEventListener('click', () => loadDevices(true));
   refreshResultsBtn.addEventListener('click', () => loadResults());
