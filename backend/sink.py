@@ -205,7 +205,7 @@ class StoreManager:
         now_str = when.strftime("%H%M%S")  # 文件名按时分秒
         return self.root / dn_hex / day / f"{now_str}.csv"
 
-    def _open_new_session(self, dn_hex: str, sn: int, when: datetime):
+    def _open_new_session(self, dn_hex: str, sn: int, when: datetime, ingest_time: datetime):
         # Must be called within lock
         # 关闭旧句柄（若有）
         s = self.sessions.get(dn_hex)
@@ -219,47 +219,51 @@ class StoreManager:
             "day": when.strftime("%Y%m%d"),
             "handle": h,
             "last_seen": when,
+            "last_ingest_time": ingest_time,
             "sn": int(sn),
         }
         return h
 
-    def _get_handle_for_write(self, dn_hex: str, sn: int, when: datetime) -> CsvHandle:
+    def _get_handle_for_write(self, dn_hex: str, sn: int, when: datetime, ingest_time: datetime) -> CsvHandle:
         # Must be called within lock
         day = when.strftime("%Y%m%d")
         s = self.sessions.get(dn_hex)
 
         if s is None:
-            return self._open_new_session(dn_hex, sn, when)
+            return self._open_new_session(dn_hex, sn, when, ingest_time)
 
         # Rotate the file whenever day changes to keep folders tidy.
         # 一旦跨天就强制创建新文件，保持目录整洁。
         if s["day"] != day:
-            return self._open_new_session(dn_hex, sn, when)
+            return self._open_new_session(dn_hex, sn, when, ingest_time)
 
         # Treat long idle windows as new experiments -> new file.
         # 如空闲时间过长，则视为新实验并重启文件。
-        last_seen: datetime = s["last_seen"]
-        idle = (when - last_seen).total_seconds()
+        # Use ingest_time for timeout logic to avoid device timestamp jumps/drifts.
+        last_ingest = s.get("last_ingest_time") or s.get("last_seen")
+        idle = (ingest_time - last_ingest).total_seconds()
+        
         if idle < 0:
             idle = 0.0
         if idle >= self.inactivity_timeout_sec:
-            return self._open_new_session(dn_hex, sn, when)
+            return self._open_new_session(dn_hex, sn, when, ingest_time)
 
         # Column count depends on SN, so switch files when SN changes.
         # CSV 列数取决于 SN，发生变化时需切换文件。
         if int(s["sn"]) != int(sn):
-            return self._open_new_session(dn_hex, sn, when)
+            return self._open_new_session(dn_hex, sn, when, ingest_time)
 
         return s["handle"]
 
     def write(self, dn_hex: str, sn: int, ts: float, pressures, mag, gyro, acc, ingest_time: datetime):
         event_time = self._resolve_event_time(ts, ingest_time)
         with self._lock:
-            h = self._get_handle_for_write(dn_hex, sn, event_time)
+            h = self._get_handle_for_write(dn_hex, sn, event_time, ingest_time)
             h.write_row(ts, pressures, mag, gyro, acc, self.flush_every_rows)
-            # 更新 last_seen
+            # 更新 last_seen 和 last_ingest_time
             sess = self.sessions[dn_hex]
             sess["last_seen"] = event_time
+            sess["last_ingest_time"] = ingest_time
 
     def close_session(self, dn_hex: str):
         with self._lock:
@@ -281,10 +285,11 @@ class StoreManager:
             # Collect keys to remove to avoid modifying dict while iterating
             to_remove = []
             for dn_hex, sess in self.sessions.items():
-                last_seen = sess.get("last_seen")
-                if not last_seen:
+                # Use last_ingest_time for robust timeout check
+                last_active = sess.get("last_ingest_time") or sess.get("last_seen")
+                if not last_active:
                     continue
-                idle = (now - last_seen).total_seconds()
+                idle = (now - last_active).total_seconds()
                 if idle >= self.inactivity_timeout_sec:
                     # Close and mark for removal
                     h = sess.get("handle")
