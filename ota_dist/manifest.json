@@ -2,15 +2,21 @@
   "devices": [
     {
       "model": "v2.1",
-      "latest": "4.3.1",
-      "url": "https://isensing-s1.u-aizu.ac.jp/OTA/gcu-v2.1-4.3.1.bin",
-      "sha256": "589c29cd935993d696d73be6ef165bbac157f7cf9afcd817f64cb08b1cd02539"
+      "latest": "4.3.2",
+      "url": "https://isensing-s1.u-aizu.ac.jp/OTA/gcu-v2.1-4.3.2.bin",
+      "sha256": "80c71fd49bb88c7664479d37a1ea2ff4f3df4e93fa0628ff71fee7d14222ea56"
     },
     {
       "model": "v2.2.c",
-      "latest": "4.3.1",
-      "url": "https://isensing-s1.u-aizu.ac.jp/OTA/gcu-v2.2.c-4.3.1.bin",
-      "sha256": "b775953ef6bc030b0ad20033b16ced8c7dc11874c0b9d10787e2195038f1b36a"
+      "latest": "4.3.2",
+      "url": "https://isensing-s1.u-aizu.ac.jp/OTA/gcu-v2.2.c-4.3.2.bin",
+      "sha256": "804972751e79a521900f48cc8b8e70fa77e7cdb779576b825071816365e4a566"
+    },
+    {
+      "model": "v2.3.d",
+      "latest": "4.3.2",
+      "url": "https://isensing-s1.u-aizu.ac.jp/OTA/gcu-v2.3.d-4.3.2.bin",
+      "sha256": "58f7530f171127875a1f3978a881bd881c214be417a55f906b20ac8668f47949"
     }
   ]
 }
