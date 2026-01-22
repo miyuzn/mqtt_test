@@ -10,5 +10,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+RUN chmod +x web_entrypoint.sh
 
-CMD ["python", "app.py"]
+CMD ["./web_entrypoint.sh"]

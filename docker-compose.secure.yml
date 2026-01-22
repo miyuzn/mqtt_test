@@ -40,6 +40,8 @@ services:
       - ./server:/server
     # 使用新建的组合启动脚本
     command: ["sh", "backend_entrypoint.sh"]
+    ports:
+      - "5001:5001"
     restart: unless-stopped
 
   sink:
