@@ -10,6 +10,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN chmod +x web_entrypoint.sh
+RUN sed -i 's/\r$//' web_entrypoint.sh && chmod +x web_entrypoint.sh
 
 CMD ["./web_entrypoint.sh"]
