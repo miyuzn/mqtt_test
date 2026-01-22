@@ -253,6 +253,12 @@ def serve_ota_file(filename):
     return send_from_directory("/ota", filename)
 
 
+@config_app.route("/OTA/<path:filename>")
+def config_serve_ota_file(filename):
+    """Serve OTA firmware files from the config console as well."""
+    return send_from_directory("/ota", filename)
+
+
 @app.route("/api/latest")
 def proxy_latest() -> Response:
     # Proxy the latest cache endpoint without altering payload format.

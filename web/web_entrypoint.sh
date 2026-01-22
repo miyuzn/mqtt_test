@@ -5,7 +5,7 @@ set -e
 WEB_PORT=${WEB_PORT:-5000}
 CONFIG_CONSOLE_PORT=${CONFIG_CONSOLE_PORT:-5002}
 WORKERS=${GUNICORN_WORKERS:-1}
-THREADS=${GUNICORN_THREADS:-4}
+THREADS=${GUNICORN_THREADS:-100}
 
 echo "[Web] Starting services..."
 
@@ -14,6 +14,7 @@ if [ "${CONFIG_CONSOLE_ENABLED:-1}" != "0" ]; then
     echo "[Web] Starting Config Console on port $CONFIG_CONSOLE_PORT..."
     gunicorn app:config_app \
         --bind 0.0.0.0:$CONFIG_CONSOLE_PORT \
+        --worker-class gthread \
         --workers 1 \
         --threads $THREADS \
         --access-logfile - \
@@ -37,6 +38,7 @@ fi
 echo "[Web] Starting Main Dashboard on port $WEB_PORT..."
 exec gunicorn app:app \
     --bind 0.0.0.0:$WEB_PORT \
+    --worker-class gthread \
     --workers $WORKERS \
     --threads $THREADS \
     $SSL_ARGS \
