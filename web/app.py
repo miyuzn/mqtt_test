@@ -321,7 +321,7 @@ def _stream_proxy_common(remote_path: str) -> Response:
 
 
 @app.route("/stream")
-def proxy_stream_all() -> Response:
+def proxy_stream() -> Response:
     return _stream_proxy_common("/stream")
 
 
