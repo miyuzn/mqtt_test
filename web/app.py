@@ -8,6 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
+# Patch standard library for Gevent concurrency (must be first)
+# This makes requests.get() and time.sleep() non-blocking greenlets
+from gevent import monkey
+monkey.patch_all()
+
 import requests
 from flask import (
     Flask,
@@ -19,6 +24,7 @@ from flask import (
     stream_with_context,
     send_from_directory,
 )
+from gevent.pywsgi import WSGIServer
 
 from config_backend import ConfigValidationError, build_config_service_from_env
 from discovery_backend import (
@@ -274,11 +280,10 @@ def proxy_latest() -> Response:
     return jsonify(resp.json())
 
 
-@app.route("/stream")
-def proxy_stream() -> Response:
+def _stream_proxy_common(remote_path: str) -> Response:
+    """Helper to stream from a specific bridge path."""
     def generate() -> Iterator[bytes]:
         # Keep an upstream SSE request open and relay bytes verbatim.
-        # 持续保持与上游的 SSE 请求，并逐字节透传。
         headers = {
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache",
@@ -286,34 +291,24 @@ def proxy_stream() -> Response:
         }
         try:
             with requests.get(
-                _bridge_url("/stream"),
+                _bridge_url(remote_path),
                 headers=headers,
                 stream=True,
                 timeout=(BRIDGE_TIMEOUT_CONNECT, None),  # 关键：不设读超时
             ) as upstream:
                 upstream.raise_for_status()
 
-                # Trigger EventSource to enter the open state immediately.
-                # 让浏览器端 EventSource 立即进入 open 状态。
                 yield b": proxy connected\n\n"
 
-                # Pass through upstream chunks directly without re-encoding.
-                # 不重新编码，直接透传上游返回的原始 chunk。
                 for chunk in upstream.iter_content(chunk_size=2048):
                     if not chunk:
                         continue
-                    # Never append extra newlines; keep the byte stream 1:1.
-                    # 禁止追加换行，保持字节流完全一致。
                     yield chunk
 
         except requests.RequestException as exc:  # pragma: no cover
             payload = json.dumps({"error": "bridge_unavailable", "detail": str(exc)})
-            # Emit a standards-compliant SSE error event for the browser.
-            # 使用标准 SSE 语法通知浏览器发生错误。
             yield f"event: error\ndata: {payload}\n\n".encode("utf-8")
 
-    # Wrap generator output with SSE-friendly headers to avoid buffering.
-    # 使用生成器输出并添加 SSE 友好的响应头，避免代理缓冲。
     response = Response(
         stream_with_context(generate()),
         mimetype="text/event-stream",
@@ -325,10 +320,20 @@ def proxy_stream() -> Response:
     return response
 
 
+@app.route("/stream")
+def proxy_stream_all() -> Response:
+    return _stream_proxy_common("/stream")
+
+
+@app.route("/stream/<dn>")
+def proxy_stream_dn(dn: str) -> Response:
+    return _stream_proxy_common(f"/stream/{dn}")
+
+
 @app.route("/api/record", methods=["POST"])
 def api_record() -> Response:
     if config_service is None:
-        return jsonify({"error": "config_service_disabled", "detail": "Backend configuration service is not enabled."}), 503
+        return jsonify({"error": "config_service_disabled", "detail": "Backend configuration service is not enabled."} ), 503
     
     data = request.get_json(silent=True) or {}
     dn = data.get("dn")
@@ -534,7 +539,7 @@ def config_apply_direct() -> Response:
     return jsonify({**entry, "discoveries": devices}), (200 if status == "ok" else 502)
 
 
-@config_app.route("/api/license/apply", methods=["POST"])
+@app.route("/api/license/apply", methods=["POST"])
 def config_license_apply() -> Response:
     cfg_svc = _require_config_service()
     lic_svc = _require_license_service()
@@ -620,24 +625,34 @@ def config_license_query() -> Response:
 
 
 def _run_config_console():
-    config_app.run(host="0.0.0.0", port=CONFIG_CONSOLE_PORT, threaded=True, use_reloader=False)
+    # Use gevent WSGI for config console too
+    print(f"[config-console] serving on port {CONFIG_CONSOLE_PORT}")
+    server = WSGIServer(("0.0.0.0", CONFIG_CONSOLE_PORT), config_app)
+    server.serve_forever()
 
 
 if __name__ == "__main__":
     # Run in threaded mode locally so SSE streaming is not blocked.
     # 本地启动时启用多线程，防止单线程阻塞 SSE。
     if CONFIG_CONSOLE_ENABLED:
-        threading.Thread(target=_run_config_console, name="config-console", daemon=True).start()
+        # Use gevent spawn instead of threading.Thread
+        import gevent
+        gevent.spawn(_run_config_console)
 
     web_port = int(os.getenv("WEB_PORT", "5000"))
     ssl_enabled = os.getenv("WEB_SSL_ENABLED", "0") not in ("0", "", "false", "False", "FALSE")
     ssl_cert = os.getenv("WEB_SSL_CERT")
     ssl_key = os.getenv("WEB_SSL_KEY")
-    ssl_context = None
+    
+    # Gevent WSGI SSL configuration
+    ssl_args = {}
     if ssl_enabled:
-        if ssl_cert and ssl_key:
-            ssl_context = (ssl_cert, ssl_key)
+        if ssl_cert and ssl_key and os.path.exists(ssl_cert) and os.path.exists(ssl_key):
+            print(f"[web] starting with SSL: {ssl_cert}")
+            ssl_args = {"certfile": ssl_cert, "keyfile": ssl_key}
         else:
-            print("[web] WEB_SSL_ENABLED is set but WEB_SSL_CERT/WEB_SSL_KEY missing; falling back to HTTP.")
+            print("[web] WEB_SSL_ENABLED is set but WEB_SSL_CERT/WEB_SSL_KEY missing or invalid; falling back to HTTP.")
 
-    app.run(host="0.0.0.0", port=web_port, threaded=True, use_reloader=False, ssl_context=ssl_context)
+    print(f"[web] serving on port {web_port} (gevent)")
+    http_server = WSGIServer(("0.0.0.0", web_port), app, **ssl_args)
+    http_server.serve_forever()

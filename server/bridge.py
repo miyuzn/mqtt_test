@@ -9,22 +9,28 @@ MQTT 到 Web 的桥接服务：订阅解析后的主题，缓存每个 DN 的最
 
 from __future__ import annotations
 
+# Patch standard library for Gevent concurrency (must be first)
+from gevent import monkey
+monkey.patch_all()
+
 import base64
 import json
 import os
-import queue
+import queue  # Patched by gevent
 import signal
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 import configparser
 import paho.mqtt.client as mqtt
 from flask import Flask, Response, jsonify, stream_with_context
 from flask_socketio import SocketIO, emit
+from gevent.pywsgi import WSGIServer  # Production WSGI server
 
 APP = Flask(__name__)
-SOCKETIO = SocketIO(APP, cors_allowed_origins="*", async_mode="threading")
+# Switch to gevent async mode for high concurrency
+SOCKETIO = SocketIO(APP, cors_allowed_origins="*", async_mode="gevent")
 
 
 class BridgeConfig:
@@ -86,10 +92,12 @@ class BridgeService:
         self.cfg = cfg
         self._latest_by_dn: Dict[str, Dict[str, Any]] = {}
         self._cache_lock = threading.Lock()
-        self._listeners: list[queue.Queue] = []
-        # Registered SSE listeners each own a small queue to receive updates.
-        # 每个注册的 SSE 监听者都会获得一个小型队列，用于缓冲推送数据。
+        
+        # Listeners is now a list of tuples: (queue, dn_filter)
+        # dn_filter can be None (all) or a specific DN string
+        self._listeners: list[Tuple[queue.Queue, Optional[str]]] = []
         self._listeners_lock = threading.Lock()
+        
         self._running = threading.Event()
         self._running.set()
         self._mqtt_client: Optional[mqtt.Client] = self._create_mqtt_client()
@@ -206,47 +214,71 @@ class BridgeService:
 
     # ------------------------------------------------------------------
     # Cache & broadcast helpers
-    def snapshot(self) -> Iterable[Dict[str, Any]]:
+    def snapshot(self, filter_dn: Optional[str] = None) -> Iterable[Dict[str, Any]]:
         with self._cache_lock:
+            if filter_dn:
+                entry = self._latest_by_dn.get(filter_dn)
+                return [entry] if entry else []
             return [self._latest_by_dn[k] for k in sorted(self._latest_by_dn.keys())]
 
     def get_dn(self, dn: str) -> Optional[Dict[str, Any]]:
         with self._cache_lock:
             return self._latest_by_dn.get(dn)
 
-    def _broadcast(self, entry: Dict[str, Any]) -> None:
+    def _broadcast(self, entry: Dict[str, Any] | list[Dict[str, Any]]) -> None:
         # Emit to realtime sockets and queue-based SSE listeners simultaneously.
         # 同时向实时 Socket 以及基于队列的 SSE 监听者推送最新数据。
         SOCKETIO.emit("update", entry)
         self._push_to_listeners(entry)
 
-    def _push_to_listeners(self, entry: Dict[str, Any]) -> None:
-        # Non-blocking push with drop-oldest fallback to keep slow clients alive.
-        # 采用“丢弃最旧数据”策略进行非阻塞推送，防止慢客户端拖垮服务。
+    def _push_to_listeners(self, data: Dict[str, Any] | list[Dict[str, Any]]) -> None:
+        # Non-blocking push with drop-oldest fallback.
+        # Implements filtering based on DN.
+        items = data if isinstance(data, list) else [data]
+        
         with self._listeners_lock:
-            for q in list(self._listeners):
+            for q, filter_dn in list(self._listeners):
+                # Filter logic:
+                # If filter_dn is set, only push items that match that DN.
+                # If no items match, push nothing to this queue.
+                if filter_dn:
+                    matched_items = [item for item in items if item.get("dn") == filter_dn]
+                    if not matched_items:
+                        continue
+                    # Push either a single item or list depending on original format? 
+                    # To be safe and consistent with client expectation, if we filtered down to 1 item 
+                    # from a list, we can send it as a single item if the original was single, 
+                    # but here 'data' type tells us.
+                    # Simpler: If the original data was a list, send a list. If single, send single.
+                    payload_to_send = matched_items if isinstance(data, list) else matched_items[0]
+                else:
+                    payload_to_send = data
+
                 try:
-                    q.put_nowait(entry)
+                    q.put_nowait(payload_to_send)
                 except queue.Full:
                     try:
                         q.get_nowait()
                     except queue.Empty:
                         pass
                     try:
-                        q.put_nowait(entry)
+                        q.put_nowait(payload_to_send)
                     except queue.Full:
-                        self._listeners.remove(q)
+                        # Should not happen if we just made space, unless extreme contention
+                        self._listeners.remove((q, filter_dn))
 
-    def register_listener(self) -> queue.Queue:
+    def register_listener(self, filter_dn: Optional[str] = None) -> queue.Queue:
         q: queue.Queue = queue.Queue(maxsize=200)
         with self._listeners_lock:
-            self._listeners.append(q)
+            self._listeners.append((q, filter_dn))
         return q
 
     def unregister_listener(self, q: queue.Queue) -> None:
         with self._listeners_lock:
-            if q in self._listeners:
-                self._listeners.remove(q)
+            # We have to find the tuple that contains this queue
+            to_remove = [item for item in self._listeners if item[0] == q]
+            for item in to_remove:
+                self._listeners.remove(item)
 
 
 bridge_config = BridgeConfig()
@@ -279,15 +311,25 @@ def _format_sse(event: str, data: Any) -> str:
 
 
 @APP.get("/stream")
-def stream() -> Response:
+def stream_all() -> Response:
+    return _stream_common(filter_dn=None)
+
+@APP.get("/stream/<dn>")
+def stream_by_dn(dn: str) -> Response:
+    # Normalize DN (optional, but good practice if frontend sends lowercase)
+    dn_clean = BridgeService._normalize_dn(dn)
+    return _stream_common(filter_dn=dn_clean)
+
+def _stream_common(filter_dn: Optional[str]) -> Response:
     def generate():
         # Send a snapshot first so browsers have immediate state.
-        # 先推送一次快照，让浏览器立即拥有初始状态。
-        yield _format_sse("snapshot", {"data": list(bridge_service.snapshot())})
-        listener = bridge_service.register_listener()
+        yield _format_sse("snapshot", {"data": list(bridge_service.snapshot(filter_dn))})
+        
+        listener = bridge_service.register_listener(filter_dn)
         try:
             while bridge_service._running.is_set():
                 try:
+                    # Queue get is now gevent-patched (yielding)
                     item = listener.get(timeout=1.0)
                 except queue.Empty:
                     continue
@@ -309,7 +351,8 @@ def install_signals():
     def _stop(signum, frame):
         print(f"[bridge] stopping (signal {signum})")
         bridge_service.stop()
-
+        # With gevent, we might need to explicitly stop the server or let it exit
+        
     signal.signal(signal.SIGINT, _stop)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _stop)
@@ -317,15 +360,17 @@ def install_signals():
 
 def main() -> None:
     print(
-        "[bridge] starting with broker="
+        "[bridge] starting (gevent) with broker="
         f"{bridge_config.mqtt_host}:{bridge_config.mqtt_port} topic={bridge_config.mqtt_topic}"
     )
-    # Boot the bridge then hand over to the Socket.IO development server.
-    # 启动桥接逻辑后交给 Socket.IO 开发服务器常驻运行。
     install_signals()
     bridge_service.start()
     try:
-        SOCKETIO.run(APP, host="0.0.0.0", port=bridge_config.http_port, allow_unsafe_werkzeug=True)
+        # Use Gevent's WSGI server for high concurrency
+        # Log to None to avoid excessive access logs in docker, or keep default
+        http_server = WSGIServer(("0.0.0.0", bridge_config.http_port), APP)
+        print(f"[bridge] serving on port {bridge_config.http_port}")
+        http_server.serve_forever()
     finally:
         bridge_service.stop()
 
