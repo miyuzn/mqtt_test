@@ -15,10 +15,13 @@ MQTT sink that focuses on JSON payloads but still accepts legacy binary frames:
 """
 
 import os, sys, csv, json, time, signal, pathlib, configparser, threading
+import queue
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Tuple, Optional
 
 import paho.mqtt.client as mqtt
+import psycopg2
+from psycopg2 import sql
 
 JST = timezone(timedelta(hours=9))
 
@@ -108,6 +111,232 @@ def load_config() -> dict:
     cfg["INACT_TIMEOUT_SEC"] = int(env("SINK_INACT_TIMEOUT_SEC", str(cfg["INACT_TIMEOUT_SEC"])))
     return cfg
 
+# ========== 数据库工具 ==========
+def get_db_connection():
+    host = os.getenv("DB_HOST")
+    if not host: return None
+    return psycopg2.connect(
+        host=host,
+        port=os.getenv("DB_PORT", "5432"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"),
+        connect_timeout=10
+    )
+
+def get_csv_timestamp(filepath):
+    """Attempt to read the first data row timestamp from CSV.
+    尝试从 CSV 中读取第一行数据的 Timestamp。
+    """
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            # Expected: // DN..., Header, Data
+            lines = [f.readline() for _ in range(3)]
+            if len(lines) < 3: return None
+            
+            headers = [h.strip() for h in lines[1].split(',')]
+            row = [d.strip() for d in lines[2].split(',')]
+            
+            if "Timestamp" in headers:
+                idx = headers.index("Timestamp")
+                if idx < len(row):
+                    ts_val = float(row[idx])
+                    if ts_val > 0:
+                        return datetime.fromtimestamp(ts_val, JST)
+    except Exception:
+        pass
+    return None
+
+def normalize_path_for_db(root: pathlib.Path, file_path: pathlib.Path) -> str:
+    """Calculate directory path relative to root, formatted for DB (Windows separators).
+    计算相对于 root 的目录路径，统一为 Windows 风格的反斜杠结尾（保持与旧逻辑兼容）。
+    """
+    try:
+        # relative_to throws if not subpath
+        rel = file_path.parent.relative_to(root)
+        s = str(rel).replace("/", "\\")
+        if not s.endswith("\\"):
+            s += "\\"
+        return s
+    except Exception:
+        # Fallback if path manipulation fails
+        return f"{file_path.parent.name}\\"
+
+class DBWriter(threading.Thread):
+    """Background thread to handle DB inserts/updates without blocking MQTT loop."""
+    def __init__(self, queue_obj, root_dir):
+        super().__init__(daemon=True)
+        self.queue = queue_obj
+        self.root = pathlib.Path(root_dir)
+        self._conn = None
+    
+    def _get_conn(self):
+        if self._conn and self._conn.closed == 0:
+            return self._conn
+        try:
+            self._conn = get_db_connection()
+            return self._conn
+        except Exception as e:
+            print(f"[DBWriter] Connect failed: {e}")
+            return None
+
+    def run(self):
+        print("[DBWriter] Started.")
+        while True:
+            item = self.queue.get()
+            if item is None: break # Stop signal
+            
+            action, payload = item
+            conn = self._get_conn()
+            if not conn:
+                self.queue.task_done()
+                continue
+            
+            try:
+                with conn:
+                    with conn.cursor() as cur:
+                        if action == "INSERT":
+                            self._handle_insert(cur, payload)
+                        elif action == "UPDATE":
+                            self._handle_update(cur, payload)
+            except Exception as e:
+                print(f"[DBWriter] Error processing {action}: {e}")
+                # Optional: retry logic could go here, but keep simple for now
+                if self._conn:
+                    try: self._conn.close()
+                    except: pass
+                    self._conn = None
+            
+            self.queue.task_done()
+    
+    def _handle_insert(self, cur, payload):
+        # payload: (dn_hex, abs_path, timestamp, filename)
+        dn_hex, abs_path_str, ts, filename = payload
+        abs_path = pathlib.Path(abs_path_str)
+        
+        rel_path_str = normalize_path_for_db(self.root, abs_path)
+        
+        # Ensure timestamp is valid datetime
+        if isinstance(ts, (int, float)):
+            dt = datetime.fromtimestamp(ts, JST)
+        elif isinstance(ts, datetime):
+            dt = ts
+        else:
+            dt = datetime.now(JST)
+
+        sql_cmd = """
+            INSERT INTO data_files 
+            (mac_address, file_date, file_time, file_datetime, file_name, file_path, file_size, side_position, file_memo)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+        """
+        cur.execute(sql_cmd, (
+            dn_hex, dt.date(), dt.time(), dt,
+            filename, rel_path_str, 0, None, 'Live Recording'
+        ))
+        # print(f"[DB] Inserted {filename}")
+
+    def _handle_update(self, cur, payload):
+        # payload: (abs_path, size)
+        abs_path_str, size = payload
+        abs_path = pathlib.Path(abs_path_str)
+        filename = abs_path.name
+        rel_path_str = normalize_path_for_db(self.root, abs_path)
+        
+        # Identify record by mac (implied by path structure?), filename and path
+        # Actually mac is needed for index usage usually, but we have filename+path unique?
+        # Let's try matching by filename + path
+        sql_cmd = """
+            UPDATE data_files SET file_size = %s 
+            WHERE file_name = %s AND file_path = %s
+        """
+        cur.execute(sql_cmd, (size, filename, rel_path_str))
+        # print(f"[DB] Updated size for {filename}: {size}")
+
+def rebuild_file_index(root_dir):
+    """Scan disk and sync DB. Serves as the 'Source of Truth' logic."""
+    print("[DB-Sync] Starting full index rebuild...")
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            print("[DB-Sync] No DB config, skipping.")
+            return
+
+        root = pathlib.Path(root_dir)
+        if not root.exists(): return
+
+        # Pre-load valid MACs
+        valid_macs = set()
+        with conn.cursor() as cur:
+            cur.execute("SELECT mac_address FROM device_info")
+            for row in cur.fetchall():
+                if row[0]: valid_macs.add(row[0])
+
+        disk_files = []
+        # Scan Level 1: DN
+        for dn_dir in root.iterdir():
+            if not dn_dir.is_dir(): continue
+            dn_hex = dn_dir.name
+            if len(dn_hex) < 4 or dn_hex not in valid_macs: continue
+
+            # Scan Level 2+: CSVs
+            for p in dn_dir.rglob("*.csv"):
+                try:
+                    ts = get_csv_timestamp(p)
+                    if not ts:
+                        ts = datetime.fromtimestamp(p.stat().st_mtime, JST)
+                    
+                    rel_path_str = normalize_path_for_db(root, p)
+                    
+                    disk_files.append({
+                        'mac': dn_hex,
+                        'name': p.name,
+                        'path': rel_path_str,
+                        'size': p.stat().st_size,
+                        'dt': ts
+                    })
+                except Exception:
+                    pass
+
+        # Full Rebuild (Truncate + Insert)
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("TRUNCATE TABLE data_files RESTART IDENTITY CASCADE;")
+                count = 0
+                for f in disk_files:
+                    cur.execute("""
+                        INSERT INTO data_files 
+                        (mac_address, file_date, file_time, file_datetime, file_name, file_path, file_size, side_position, file_memo)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        f['mac'], f['dt'].date(), f['dt'].time(), f['dt'], 
+                        f['name'], f['path'], f['size'], None, 'Rebuilt Index'
+                    ))
+                    count += 1
+        print(f"[DB-Sync] Sync complete. Inserted: {count}")
+    except Exception as e:
+        print(f"[DB-Sync] Failed: {e}")
+    finally:
+        if conn: conn.close()
+
+class SchedulerThread(threading.Thread):
+    def __init__(self, root_dir, interval_hours=24):
+        super().__init__(daemon=True)
+        self.root_dir = root_dir
+        self.interval = interval_hours * 3600
+        self._stop_event = threading.Event()
+
+    def run(self):
+        print(f"[Scheduler] Started. Scanning every {self.interval}s.")
+        rebuild_file_index(self.root_dir)
+        while not self._stop_event.is_set():
+            if self._stop_event.wait(self.interval): break
+            rebuild_file_index(self.root_dir)
+
+    def stop(self):
+        self._stop_event.set()
+
 # ========== DN & CSV 句柄 ==========
 def dn_to_hex(dn) -> str:
     """将 dn 统一为 12 位大写 HEX（假定 6 字节设备号）。"""
@@ -132,9 +361,11 @@ class CsvHandle:
     """Manage a per-session CSV file for one DN/day.
     为同一 DN/日期维护单个 CSV 句柄。
     """
-    def __init__(self, path: pathlib.Path, sn: int, dn_hex: str):
+    def __init__(self, path: pathlib.Path, sn: int, dn_hex: str, db_queue: queue.Queue = None):
         self.path = path; self.sn = sn; self.dn_hex = dn_hex
+        self.db_queue = db_queue
         self.f = None; self.writer = None; self.rows_since_flush = 0
+        self.has_inserted_db = False
 
     def _ensure_open(self):
         new_file = not self.path.exists()
@@ -143,13 +374,21 @@ class CsvHandle:
         self.writer = csv.writer(self.f)
         if new_file:
             self.writer.writerow([f"// DN: {self.dn_hex}, SN: {self.sn}"])
-            header = (["Date_Time", "Timestamp"]
+            header = (["Timestamp"]
                       + [f"P{i+1}" for i in range(self.sn)]
                       + ["Mag_x","Mag_y","Mag_z","Gyro_x","Gyro_y","Gyro_z","Acc_x","Acc_y","Acc_z"])
             self.writer.writerow(header); self.f.flush()
 
     def write_row(self, ts: float, pressures, mag, gyro, acc, flush_every: int):
         if self.f is None: self._ensure_open()
+        
+        # DB Hook: Insert on first data write
+        if self.db_queue and not self.has_inserted_db:
+            # Action: INSERT, Payload: (dn_hex, abs_path_str, timestamp, filename)
+            # Use the sensor timestamp 'ts' for consistency with rebuild logic
+            self.db_queue.put(("INSERT", (self.dn_hex, str(self.path.absolute()), ts, self.path.name)))
+            self.has_inserted_db = True
+
         p = list(pressures[:self.sn]); 
         if len(p) < self.sn: p.extend([0]*(self.sn-len(p)))
         def v3(x):
@@ -157,24 +396,32 @@ class CsvHandle:
             base += [0,0,0]
             return base[:3]
         
-        # Format timestamp to string
-        dt_str = datetime.fromtimestamp(ts, JST).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        
-        row = [dt_str, ts] + p + v3(mag) + v3(gyro) + v3(acc)
+        row = [ts] + p + v3(mag) + v3(gyro) + v3(acc)
         self.writer.writerow(row); self.rows_since_flush += 1
         if self.rows_since_flush >= flush_every: self.f.flush(); self.rows_since_flush = 0
 
     def close(self):
-        if self.f: self.f.flush(); self.f.close(); self.f=None; self.writer=None
+        if self.f: 
+            self.f.flush(); self.f.close()
+            # DB Hook: Update size on close
+            if self.db_queue and self.has_inserted_db:
+                try:
+                    final_size = self.path.stat().st_size
+                    # Action: UPDATE, Payload: (abs_path_str, size)
+                    self.db_queue.put(("UPDATE", (str(self.path.absolute()), final_size)))
+                except Exception:
+                    pass
+            self.f=None; self.writer=None
 
 class StoreManager:
     """Allocate CSV writers on demand and rotate based on time/session rules.
     根据时间/会话规则按需分配 CSV 写入句柄。
     """
-    def __init__(self, root_dir, flush_every_rows, inactivity_timeout_sec: int = 20):
+    def __init__(self, root_dir, flush_every_rows, inactivity_timeout_sec: int = 20, db_queue: queue.Queue = None):
         self.root = pathlib.Path(root_dir)
         self.flush_every_rows = flush_every_rows
         self.inactivity_timeout_sec = inactivity_timeout_sec
+        self.db_queue = db_queue
         # 按 DN 维护当前会话：dn_hex -> {"day": "YYYYMMDD", "handle": CsvHandle, "last_seen": datetime, "sn": int}
         self.sessions: Dict[str, Dict[str, object]] = {}
         self._lock = threading.RLock()
@@ -214,7 +461,7 @@ class StoreManager:
             except Exception: pass
 
         path = self._new_handle_path(dn_hex, when)
-        h = CsvHandle(path, sn, dn_hex)
+        h = CsvHandle(path, sn, dn_hex, db_queue=self.db_queue)
         self.sessions[dn_hex] = {
             "day": when.strftime("%Y%m%d"),
             "handle": h,
@@ -370,7 +617,22 @@ class MqttSink:
         self.client = mqtt.Client(client_id=cfg["CLIENT_ID"], clean_session=True)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
-        self.store = StoreManager(cfg["ROOT_DIR"], cfg["FLUSH_EVERY_ROWS"], cfg.get("INACT_TIMEOUT_SEC", 5))
+        
+        # Setup DB Queue and Threads
+        self.db_queue = queue.Queue()
+        
+        # Pass db_queue to store
+        self.store = StoreManager(
+            cfg["ROOT_DIR"], 
+            cfg["FLUSH_EVERY_ROWS"], 
+            cfg.get("INACT_TIMEOUT_SEC", 5),
+            db_queue=self.db_queue
+        )
+        
+        # Threads
+        self.db_thread = DBWriter(self.db_queue, cfg["ROOT_DIR"])
+        self.scheduler = SchedulerThread(cfg["ROOT_DIR"])
+        
         self._running = True
         self._rx = 0
         self._last_stat = time.time()
@@ -451,6 +713,10 @@ class MqttSink:
         now = time.time()
 
     def run(self):
+        # Start helper threads
+        self.db_thread.start()
+        self.scheduler.start()
+        
         self.client.connect(self.cfg["MQTT_BROKER_HOST"], self.cfg["MQTT_BROKER_PORT"], keepalive=30)
         self.client.loop_start()
         try:
@@ -458,7 +724,14 @@ class MqttSink:
                 time.sleep(1.0)  # 主循环 1秒检查一次超时
                 self.store.check_timeouts()
         finally:
-            self.client.loop_stop(); self.client.disconnect(); self.store.close_all()
+            self.client.loop_stop(); self.client.disconnect()
+            self.store.close_all()
+            
+            # Stop DB thread gracefully
+            self.scheduler.stop()
+            self.db_queue.put(None) # Poison pill
+            self.db_thread.join(timeout=2)
+            
             print("[MAIN] sink stopped.")
 
     def stop(self): self._running = False

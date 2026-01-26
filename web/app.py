@@ -77,7 +77,11 @@ DISCOVER_DEFAULT_ATTEMPTS = int(os.getenv("CONFIG_DISCOVER_ATTEMPTS", "2"))
 DISCOVER_DEFAULT_GAP = float(os.getenv("CONFIG_DISCOVER_GAP", "0.2"))
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "b7aee292ceb05242d70422ed4921a2b5")
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
+if not app.secret_key:
+    # Generates a random key each restart (secure, but invalidates sessions on restart)
+    app.secret_key = os.urandom(24).hex()
+    print("[SECURITY WARNING] FLASK_SECRET_KEY not set. Using random key.", file=sys.stderr)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
 
 config_app = Flask("config_console", template_folder="templates", static_folder="static")
