@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Data Files - Sensor System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .container { max-width: 1200px; margin-top: 2rem; }
+        .table-action { margin-right: 5px; }
+        .folder-icon { color: #f39c12; margin-right: 0.5rem; }
+        .file-icon { color: #3498db; margin-right: 0.5rem; }
+        .card-header { display: flex; align-items: center; justify-content: space-between; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">Sensor Portal</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/downloads">Data Files</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="navbar-text">
+                        User: <strong>{{ session.get('sso_id', 'Guest') }}</strong>
+                    </span>
+                    <a href="/logout" class="btn btn-outline-light btn-sm">Logout</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Breadcrumb -->
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb bg-light p-3 rounded shadow-sm">
+                <li class="breadcrumb-item">
+                    <a href="/downloads" class="text-decoration-none"><i class="fas fa-home"></i> Devices</a>
+                </li>
+                {% if mac %}
+                <li class="breadcrumb-item">
+                    <a href="/downloads?mac={{ mac }}" class="text-decoration-none">{{ mac }}</a>
+                </li>
+                {% endif %}
+                {% if date %}
+                <li class="breadcrumb-item active" aria-current="page">{{ date }}</li>
+                {% endif %}
+            </ol>
+        </nav>
+
+        <div class="card shadow-sm mt-4">
+            <div class="card-header bg-white border-bottom">
+                <h5 class="mb-0">
+                    {% if step == 'devices' %} Select Device
+                    {% elif step == 'dates' %} Select Date
+                    {% else %} File List
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle mb-0">
+                        
+                        <!-- Step 1: Devices -->
+                        {% if step == 'devices' %}
+                        <thead class="table-light">
+                            <tr>
+                                <th>Device Name / MAC</th>
+                                <th width="100">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for dev in devices %}
+                            <tr>
+                                <td>
+                                    <a href="/downloads?mac={{ dev.mac_address }}" class="d-block text-decoration-none text-dark py-2">
+                                        <i class="fas fa-microchip folder-icon"></i>
+                                        <span class="fw-bold">{{ dev.mac_address }}</span>
+                                        {% if dev.device_id and dev.device_id != dev.mac_address %}
+                                        <span class="text-muted ms-2 small">({{ dev.device_id }})</span>
+                                        {% endif %}
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="/downloads?mac={{ dev.mac_address }}" class="btn btn-sm btn-outline-primary">
+                                        Open <i class="fas fa-chevron-right ms-1"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-center py-4 text-muted">No devices authorized.</td></tr>
+                            {% endfor %}
+                        </tbody>
+
+                        <!-- Step 2: Dates -->
+                        {% elif step == 'dates' %}
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th width="250">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in dates %}
+                            <tr>
+                                <td>
+                                    <a href="/downloads?mac={{ mac }}&date={{ d }}" class="d-block text-decoration-none text-dark py-2">
+                                        <i class="fas fa-calendar-alt folder-icon"></i>
+                                        {{ d }}
+                                    </a>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="/downloads?mac={{ mac }}&date={{ d }}" class="btn btn-outline-primary">
+                                            Open <i class="fas fa-chevron-right ms-1"></i>
+                                        </a>
+                                        <a href="/download/batch?mac={{ mac }}&date={{ d }}" class="btn btn-outline-secondary" title="Download All as Zip">
+                                            <i class="fas fa-file-archive"></i> Zip
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="2" class="text-center py-4 text-muted">No data found for this device.</td></tr>
+                            {% endfor %}
+                        </tbody>
+
+                        <!-- Step 3: Files -->
+                        {% else %}
+                        <form action="/download/batch" method="POST" id="fileForm">
+                        <thead class="table-light">
+                            <tr>
+                                <th width="40" class="text-center">
+                                    <input type="checkbox" class="form-check-input" id="selectAll">
+                                </th>
+                                <th>File Name</th>
+                                <th>Time</th>
+                                <th>Size</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file in files %}
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" name="files" value="{{ file.file_path ~ file.file_name }}" class="form-check-input file-check">
+                                </td>
+                                <td>
+                                    <i class="fas fa-file-csv file-icon"></i> {{ file.file_name }}
+                                </td>
+                                <td>{{ file.file_time }}</td>
+                                <td>{{ ((file.file_size or 0) / 1024)|round(1) }} KB</td>
+                                <td>
+                                    <a href="{{ url_for('download_file', filepath=file.file_path ~ file.file_name) }}" 
+                                       class="btn btn-success btn-sm text-nowrap"
+                                       target="_blank">
+                                        <i class="fas fa-download"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center py-4 text-muted">No files found for this date.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                        </form>
+                        <div class="card-footer bg-white">
+                            <button type="submit" form="fileForm" class="btn btn-primary btn-sm">
+                                <i class="fas fa-file-archive"></i> Download Selected (Zip)
+                            </button>
+                        </div>
+                        <script>
+                            document.getElementById('selectAll').addEventListener('change', function() {
+                                document.querySelectorAll('.file-check').forEach(c => c.checked = this.checked);
+                            });
+                        </script>
+                        {% endif %}
+
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

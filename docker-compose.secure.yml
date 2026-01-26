@@ -35,6 +35,12 @@ services:
       - MQTT_QOS=1
       - CLIENT_ID=mqtt-bridge
       - BRIDGE_PORT=5001
+      # --- Database Configuration ---
+      - DB_HOST=163.143.136.103
+      - DB_PORT=5432
+      - DB_NAME=jscms
+      - DB_USER=postgres
+      - DB_PASS=123456
     volumes:
       - ./backend:/backend
       - ./server:/server
@@ -56,6 +62,12 @@ services:
       - PUB_TOPIC=demo/hello
       - USERNAME=
       - PASSWORD=
+      # --- Database Configuration ---
+      - DB_HOST=163.143.136.103
+      - DB_PORT=5432
+      - DB_NAME=jscms
+      - DB_USER=postgres
+      - DB_PASS=123456
     volumes:
       - ./backend:/backend
     command: ["python", "sink.py"]
@@ -77,8 +89,15 @@ services:
       - WEB_SSL_ENABLED=1
       - WEB_SSL_CERT=/certs/web.crt
       - WEB_SSL_KEY=/certs/web.key
+      # --- Database Configuration ---
+      - DB_HOST=163.143.136.103
+      - DB_PORT=5432
+      - DB_NAME=jscms
+      - DB_USER=postgres
+      - DB_PASS=123456
     volumes:
       - ./web:/web
+      - ./backend/mqtt_store:/mqtt_store:ro # Shared store for downloads
       - ./license:/license
       - ./certs:/certs:ro
       - ./ota_dist:/ota:ro  # OTA firmware directory (Read-Only)

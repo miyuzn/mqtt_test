@@ -3,6 +3,8 @@ import os
 import sys
 import threading
 import uuid
+from functools import wraps
+from datetime import timedelta
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,9 +25,18 @@ from flask import (
     request,
     stream_with_context,
     send_from_directory,
+    session,
+    redirect,
+    url_for,
+    flash,
+    send_file,
+    after_this_request
 )
+import zipfile
+import tempfile
 from gevent.pywsgi import WSGIServer
 
+import db_manager
 from config_backend import ConfigValidationError, build_config_service_from_env
 from discovery_backend import (
     DEFAULT_PORT as CONFIG_DEVICE_TCP_PORT,
@@ -66,6 +77,9 @@ DISCOVER_DEFAULT_ATTEMPTS = int(os.getenv("CONFIG_DISCOVER_ATTEMPTS", "2"))
 DISCOVER_DEFAULT_GAP = float(os.getenv("CONFIG_DISCOVER_GAP", "0.2"))
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "b7aee292ceb05242d70422ed4921a2b5")
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
+
 config_app = Flask("config_console", template_folder="templates", static_folder="static")
 
 if CONFIG_CONSOLE_ENABLED:
@@ -78,6 +92,177 @@ else:
     config_service = None
 
 _license_history_path = Path(LICENSE_HISTORY_PATH_RAW) if LICENSE_HISTORY_PATH_RAW else None
+
+# --- Auth & Middleware ---
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        user = db_manager.authenticate_user(username, password)
+        if user:
+            session.permanent = True
+            session['user_id'] = user['id']
+            session['sso_id'] = user['sso_id']
+            # Cache allowed devices in session to reduce DB hits? 
+            # Better to query fresh on page load, but maybe cache for streams.
+            return redirect(request.args.get("next") or url_for("index"))
+        else:
+            return render_template("login.html", error="Invalid username or password")
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+@app.route("/api/user/info")
+@login_required
+def api_user_info():
+    user = session.get('sso_id')
+    is_admin = (user == 'admin')
+    # Return session timeout in seconds (static config)
+    timeout = app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()
+    return jsonify({
+        "username": user,
+        "is_admin": is_admin,
+        "timeout_seconds": timeout
+    })
+
+@app.route("/api/session/renew", methods=["POST"])
+@login_required
+def api_session_renew():
+    session.modified = True # Refresh the session cookie
+    return jsonify({"status": "renewed"})
+
+@app.route("/downloads")
+@login_required
+def downloads():
+    user = session['sso_id']
+    mac = request.args.get('mac')
+    date_str = request.args.get('date')
+    
+    # Check permission for MAC
+    if mac and user != 'admin':
+        allowed = db_manager.get_user_allowed_devices(user)
+        allowed_macs = [d['mac_address'] for d in allowed]
+        if mac not in allowed_macs:
+            abort(403)
+
+    if mac and date_str:
+        # Step 3: Files
+        files = db_manager.get_device_files(mac, date_str)
+        return render_template("downloads.html", step="files", mac=mac, date=date_str, files=files)
+    elif mac:
+        # Step 2: Dates
+        dates = db_manager.get_device_dates(mac)
+        return render_template("downloads.html", step="dates", mac=mac, dates=dates)
+    else:
+        # Step 1: Devices
+        devices = db_manager.get_user_allowed_devices(user)
+        return render_template("downloads.html", step="devices", devices=devices)
+
+@app.route("/download/<path:filepath>")
+@login_required
+def download_file(filepath):
+    # Normalize path: replace backslash with slash for Linux container
+    # DB stores Windows-style paths, but we are in Linux.
+    filepath = filepath.replace('\\', '/')
+    
+    # Security Check: Ensure user has permission for this file's MAC
+    # The filepath is relative to mqtt_store root, e.g. "MAC/Date/file.csv"
+    parts = filepath.split('/')
+    if not parts: # Simple check
+         abort(404)
+    
+    # Extract MAC from path (First component)
+    target_mac = parts[0]
+    
+    # Verify permission
+    user = session['sso_id']
+    if user != 'admin':
+        allowed = db_manager.get_user_allowed_devices(user)
+        allowed_macs = [d['mac_address'] for d in allowed]
+        if target_mac not in allowed_macs:
+            abort(403)
+
+    return send_from_directory('/mqtt_store', filepath, as_attachment=True)
+
+@app.route("/download/batch", methods=["POST", "GET"])
+@login_required
+def download_batch():
+    target_files = []
+    
+    if request.method == "POST":
+        rel_paths = request.form.getlist("files")
+    else:
+        mac = request.args.get("mac")
+        date = request.args.get("date")
+        if mac and date:
+            files = db_manager.get_device_files(mac, date)
+            # Combine path and name
+            rel_paths = [f['file_path'] + f['file_name'] for f in files]
+        else:
+            return "Missing mac/date parameters", 400
+
+    if not rel_paths:
+        return "No files selected", 400
+
+    # Permission Check
+    user = session['sso_id']
+    if user != 'admin':
+        allowed = db_manager.get_user_allowed_devices(user)
+        allowed_macs = set(d['mac_address'] for d in allowed)
+    
+    clean_targets = []
+    for rp in rel_paths:
+        # Normalize
+        rp = rp.replace('\\', '/')
+        parts = rp.split('/')
+        if not parts: continue
+        
+        # Check MAC permission
+        if user != 'admin' and parts[0] not in allowed_macs:
+            continue 
+            
+        abs_path = os.path.join('/mqtt_store', rp)
+        if os.path.exists(abs_path):
+            clean_targets.append((abs_path, rp))
+
+    if not clean_targets:
+        return "No accessible files found", 404
+
+    # Create Zip
+    try:
+        fd, temp_path = tempfile.mkstemp(suffix='.zip')
+        os.close(fd)
+        
+        with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for abs_p, arc_n in clean_targets:
+                zf.write(abs_p, arc_n)
+        
+        @after_this_request
+        def remove_temp(response):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+            return response
+            
+        filename = f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        return send_file(temp_path, as_attachment=True, download_name=filename)
+        
+    except Exception as e:
+        return f"Zip error: {e}", 500
 
 if LICENSE_ENABLED:
     try:
@@ -246,10 +431,27 @@ def _merge_results() -> list[dict]:
 
 
 @app.route("/")
+@login_required
 def index() -> str:
+    user = session['sso_id']
+    device_map = {}
+    
+    if user == 'admin':
+        # Admin gets full visibility
+        allowed_dns = None
+        # Fetch mapping for all known devices
+        all_devs = db_manager.get_user_allowed_devices('admin')
+        device_map = {d['mac_address']: d['device_id'] for d in all_devs}
+    else:
+        allowed = db_manager.get_user_allowed_devices(user)
+        allowed_dns = [d['mac_address'] for d in allowed]
+        device_map = {d['mac_address']: d['device_id'] for d in allowed}
+    
     return render_template(
         "index.html",
         bridge_api_base=BRIDGE_API_BASE_URL,
+        allowed_dns=json.dumps(allowed_dns),
+        device_map=json.dumps(device_map)
     )
 
 
@@ -281,9 +483,11 @@ def proxy_latest() -> Response:
 
 
 def _stream_proxy_common(remote_path: str) -> Response:
-    """Helper to stream from a specific bridge path."""
+    """Helper to stream from a specific bridge path.
+    Performance Note: We use iter_content (raw bytes) instead of iter_lines + json parsing
+    to avoid CPU bottlenecks in Python. Filtering is delegated to the client side.
+    """
     def generate() -> Iterator[bytes]:
-        # Keep an upstream SSE request open and relay bytes verbatim.
         headers = {
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache",
@@ -294,18 +498,19 @@ def _stream_proxy_common(remote_path: str) -> Response:
                 _bridge_url(remote_path),
                 headers=headers,
                 stream=True,
-                timeout=(BRIDGE_TIMEOUT_CONNECT, None),  # 关键：不设读超时
+                timeout=(BRIDGE_TIMEOUT_CONNECT, None),
             ) as upstream:
                 upstream.raise_for_status()
 
                 yield b": proxy connected\n\n"
-
-                for chunk in upstream.iter_content(chunk_size=2048):
+                
+                # Revert to raw chunk streaming for maximum performance
+                for chunk in upstream.iter_content(chunk_size=4096):
                     if not chunk:
                         continue
                     yield chunk
 
-        except requests.RequestException as exc:  # pragma: no cover
+        except requests.RequestException as exc:
             payload = json.dumps({"error": "bridge_unavailable", "detail": str(exc)})
             yield f"event: error\ndata: {payload}\n\n".encode("utf-8")
 
@@ -315,18 +520,29 @@ def _stream_proxy_common(remote_path: str) -> Response:
     )
     response.headers["Content-Type"] = "text/event-stream; charset=utf-8"
     response.headers["Cache-Control"] = "no-cache, no-transform"
-    response.headers["X-Accel-Buffering"] = "no"  # Nginx 关闭代理缓冲
+    response.headers["X-Accel-Buffering"] = "no"
     response.headers["Connection"] = "keep-alive"
     return response
 
 
 @app.route("/stream")
+@login_required
 def proxy_stream() -> Response:
+    # Client-side filtering is used for performance
     return _stream_proxy_common("/stream")
 
 
 @app.route("/stream/<dn>")
+@login_required
 def proxy_stream_dn(dn: str) -> Response:
+    # Strict server-side check for direct single-device access
+    user = session['sso_id']
+    if user != 'admin':
+        devices = db_manager.get_user_allowed_devices(user)
+        allowed_list = [d['mac_address'] for d in devices]
+        if dn not in allowed_list:
+            abort(403)
+            
     return _stream_proxy_common(f"/stream/{dn}")
 
 

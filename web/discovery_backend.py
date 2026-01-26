@@ -8,7 +8,7 @@ from typing import Iterable, List, Tuple
 DEFAULT_PORT = int(os.getenv("CONFIG_DEVICE_TCP_PORT", os.getenv("LICENSE_TCP_PORT", "22345")))
 DISCOVER_PORT = int(os.getenv("CONFIG_DISCOVER_PORT", "22346"))
 DISCOVER_MAGIC = os.getenv("CONFIG_DISCOVER_MAGIC", "GCU_DISCOVER")
-DEFAULT_TIMEOUT = float(os.getenv("CONFIG_DISCOVER_TIMEOUT", "5"))
+DEFAULT_TIMEOUT = float(os.getenv("CONFIG_DISCOVER_TIMEOUT", "10"))
 
 
 def _safe_ip(value: str | None) -> str | None:

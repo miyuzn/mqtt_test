@@ -7,6 +7,8 @@
 
     <!-- Bootstrap (local) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" />
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
     <style>
@@ -26,13 +28,36 @@
           <h1 class="h3 mb-1" data-i18n="header.title">Real-Time Pressure Dashboard</h1>
         </div>
         <div class="text-md-end">
+          <!-- User Info & Controls -->
+          <div class="d-flex align-items-center justify-content-end gap-2 mb-2">
+              <span class="badge bg-light text-dark border d-flex align-items-center gap-2" id="user-info-badge" style="display:none;">
+                  <i class="fas fa-user-circle text-secondary"></i>
+                  <span id="user-name" class="fw-normal">--</span>
+                  <span id="user-role" class="badge bg-secondary text-white" style="font-size: 0.7em;">User</span>
+              </span>
+              <a href="/downloads" class="btn btn-sm btn-outline-primary d-flex align-items-center gap-1" title="Download Files">
+                  <i class="fas fa-download"></i> <span class="d-none d-sm-inline">Files</span>
+              </a>
+              <a href="/logout" class="btn btn-sm btn-outline-danger" title="Logout">
+                  <i class="fas fa-sign-out-alt"></i>
+              </a>
+          </div>
+
           <div class="btn-group btn-group-sm language-switcher mb-2" role="group" id="language-switcher">
             <button type="button" class="btn btn-outline-secondary" data-lang="ja">日本語</button>
             <button type="button" class="btn btn-outline-secondary" data-lang="en">English</button>
             <button type="button" class="btn btn-outline-secondary" data-lang="zh">中文</button>
           </div>
-          <div class="badge bg-secondary d-block" id="status-indicator" data-i18n="status.connecting">Connecting...</div>
-          <div class="small text-muted" id="last-update">--</div>
+          
+          <!-- Status & Session -->
+          <div class="d-flex align-items-center justify-content-end gap-2">
+              <div class="small text-muted" id="session-timer" style="display:none; font-variant-numeric: tabular-nums;">
+                  <i class="fas fa-hourglass-half"></i> <span id="session-countdown">--:--</span>
+                  <a href="#" id="renew-session-link" class="text-primary ms-1" title="Extend Session"><i class="fas fa-sync-alt"></i></a>
+              </div>
+              <div class="badge bg-secondary" id="status-indicator" data-i18n="status.connecting">Connecting...</div>
+          </div>
+          <div class="small text-muted mt-1" id="last-update">--</div>
         </div>
       </div>
   
@@ -225,7 +250,11 @@
     <script>
       const SNAPSHOT_ENDPOINT = "{{ url_for('proxy_latest') }}";
       const STREAM_ENDPOINT = "{{ url_for('proxy_stream') }}";
-
+      // Permission Filter: null means all allowed (admin), otherwise list of MACs
+      const ALLOWED_DNS = {{ allowed_dns | safe }};
+      // MAC -> DeviceID Mapping
+      const DEVICE_MAP = {{ device_map | safe }};
+      
       const state = new Map();
       const selectedDns = new Set();
       const mirrorSettingsByDevice = new Map();
@@ -1311,7 +1340,8 @@
                       devices.forEach(dn => {
                           const opt = document.createElement("option");
                           opt.value = dn;
-                          opt.textContent = dn;
+                          const devId = DEVICE_MAP[dn];
+                          opt.textContent = devId ? `${dn} (${devId})` : dn;
                           panel.deviceSelector.appendChild(opt);
                       });
                   }
@@ -1615,6 +1645,11 @@
           const normalized = normalizeEntry(entry);
           if (!normalized) return;
 
+          // Client-side permission filter
+          if (ALLOWED_DNS !== null && !ALLOWED_DNS.includes(normalized.dn)) {
+              return;
+          }
+
           // Ensure recording state is initialized to false for new devices
           if (!recordingStateByDevice.has(normalized.dn)) {
               recordingStateByDevice.set(normalized.dn, false);
@@ -1724,7 +1759,77 @@
           };
       }
       
+      // --- User & Session Management ---
+      let sessionExpiresAt = 0;
+      let sessionTimerId = null;
+
+      async function initSession() {
+          try {
+              const resp = await fetch('/api/user/info');
+              if (!resp.ok) return;
+              const data = await resp.json();
+              
+              const badge = document.getElementById('user-info-badge');
+              const nameEl = document.getElementById('user-name');
+              const roleEl = document.getElementById('user-role');
+              
+              if (badge && nameEl) {
+                  badge.style.display = 'flex';
+                  nameEl.textContent = data.username || 'Guest';
+                  if (roleEl) {
+                      roleEl.textContent = data.is_admin ? 'Admin' : 'User';
+                      roleEl.className = data.is_admin ? 'badge bg-danger text-white' : 'badge bg-secondary text-white';
+                  }
+              }
+              
+              if (data.timeout_seconds) {
+                  resetSessionTimer(data.timeout_seconds);
+                  document.getElementById('session-timer').style.display = 'block';
+              }
+          } catch (e) {
+              console.error("Session init failed", e);
+          }
+      }
+
+      function resetSessionTimer(seconds) {
+          sessionExpiresAt = Date.now() + seconds * 1000;
+          if (sessionTimerId) clearInterval(sessionTimerId);
+          updateSessionDisplay();
+          sessionTimerId = setInterval(updateSessionDisplay, 1000);
+      }
+
+      function updateSessionDisplay() {
+          const now = Date.now();
+          const diff = sessionExpiresAt - now;
+          if (diff <= 0) {
+              const el = document.getElementById('session-countdown');
+              if (el) el.textContent = "00:00";
+              clearInterval(sessionTimerId);
+              return; 
+          }
+          
+          const mins = Math.floor(diff / 60000);
+          const secs = Math.floor((diff % 60000) / 1000);
+          const text = `${mins}:${secs.toString().padStart(2, '0')}`;
+          
+          const el = document.getElementById('session-countdown');
+          if (el) {
+              el.textContent = text;
+              if (mins < 5) el.classList.add('text-danger', 'fw-bold');
+              else el.classList.remove('text-danger', 'fw-bold');
+          }
+      }
+
+      document.getElementById('renew-session-link')?.addEventListener('click', async (e) => {
+          e.preventDefault();
+          try {
+              const resp = await fetch('/api/session/renew', { method: 'POST' });
+              if (resp.ok) initSession(); 
+          } catch(e) { console.error(e); }
+      });
+
       // Init
+      initSession();
       fetchSnapshot();
       if (snapshotPollTimerId === null) snapshotPollTimerId = window.setInterval(fetchSnapshot, SNAPSHOT_POLL_INTERVAL_MS);
       let resizeRafId = null;
