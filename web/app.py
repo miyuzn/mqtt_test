@@ -84,8 +84,6 @@ if not app.secret_key:
     print("[SECURITY WARNING] FLASK_SECRET_KEY not set. Using random key.", file=sys.stderr)
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
 
-config_app = Flask("config_console", template_folder="templates", static_folder="static")
-
 if CONFIG_CONSOLE_ENABLED:
     try:
         config_service = build_config_service_from_env()
@@ -106,6 +104,34 @@ def login_required(f):
             return redirect(url_for('login', next=request.url))
         return f(*args, **kwargs)
     return decorated_function
+
+def _check_device_permission(dn: str | None) -> bool:
+    """Check if current user has permission for the given device DN."""
+    if not dn:
+        return False
+    
+    user_sso = session.get('sso_id')
+    if not user_sso:
+        return False
+        
+    if user_sso == 'admin':
+        return True
+        
+    # Get allowed devices for user
+    allowed_devices = db_manager.get_user_allowed_devices(user_sso)
+    
+    # Normalize inputs for comparison
+    target_dn_norm = _normalize_dn(dn)
+    
+    for d in allowed_devices:
+        # Check against MAC (normalized)
+        if _normalize_dn(d.get('mac_address')) == target_dn_norm:
+            return True
+        # Check against Device ID (if DN passed is ID)
+        if str(d.get('device_id')) == dn:
+            return True
+            
+    return False
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -285,7 +311,7 @@ else:
     license_service = None
 
 
-_direct_results = deque(maxlen=50)
+_direct_results = deque(maxlen=200)
 
 
 def _bridge_url(path: str) -> str:
@@ -465,9 +491,10 @@ def serve_ota_file(filename):
     return send_from_directory("/ota", filename)
 
 
-@config_app.route("/OTA/<path:filename>")
+@app.route("/console/OTA/<path:filename>")
+@login_required
 def config_serve_ota_file(filename):
-    """Serve OTA firmware files from the config console as well."""
+    """Serve OTA firmware files from the config console path as well."""
     return send_from_directory("/ota", filename)
 
 
@@ -540,12 +567,8 @@ def proxy_stream() -> Response:
 @login_required
 def proxy_stream_dn(dn: str) -> Response:
     # Strict server-side check for direct single-device access
-    user = session['sso_id']
-    if user != 'admin':
-        devices = db_manager.get_user_allowed_devices(user)
-        allowed_list = [d['mac_address'] for d in devices]
-        if dn not in allowed_list:
-            abort(403)
+    if not _check_device_permission(dn):
+        abort(403)
             
     return _stream_proxy_common(f"/stream/{dn}")
 
@@ -580,7 +603,8 @@ def healthz() -> Response:
     })
 
 
-@config_app.route("/")
+@app.route("/console")
+@login_required
 def config_index() -> str:
     return render_template(
         "config_console.html",
@@ -592,14 +616,38 @@ def config_index() -> str:
     )
 
 
-@config_app.route("/api/devices")
+@app.route("/api/devices")
+@login_required
 def config_devices() -> Response:
     svc = _require_config_service()
-    return jsonify({"items": svc.list_devices()})
+    all_devices = svc.list_devices()
+    
+    user = session.get('sso_id')
+    if user == 'admin':
+        return jsonify({"items": all_devices})
+    
+    # Filter for non-admin
+    allowed_db = db_manager.get_user_allowed_devices(user)
+    allowed_dns = set()
+    for d in allowed_db:
+        if d.get('mac_address'):
+            allowed_dns.add(_normalize_dn(d['mac_address']))
+    
+    filtered = []
+    for dev in all_devices:
+        if dev.get('dn') in allowed_dns:
+            filtered.append(dev)
+            
+    return jsonify({"items": filtered})
 
 
-@config_app.route("/api/discover", methods=["POST"])
+@app.route("/api/discover", methods=["POST"])
+@login_required
 def config_discover() -> Response:
+    # Restrict discovery to admin only
+    if session.get('sso_id') != 'admin':
+        abort(403, description="Access denied: Discovery is admin-only.")
+
     svc = _require_config_service()
     payload = request.get_json(silent=True) or {}
     attempts = payload.get("attempts")
@@ -626,22 +674,48 @@ def config_discover() -> Response:
     })
 
 
-@config_app.route("/api/commands/latest")
+@app.route("/api/commands/latest")
+@login_required
 def config_results() -> Response:
     try:
+        # TODO: Filter results based on permission?
+        # For now, we assume results might contain shared info, 
+        # but ideally we should filter 'items' by checking 'dn' against allowed list.
+        # Since this wasn't explicitly strictly detailed beyond generic RBAC, 
+        # and checking every result might be expensive, we'll leave as is or add simple filter.
+        # Let's add simple filter for safety.
         items = _merge_results()
+        
+        user = session.get('sso_id')
+        if user != 'admin':
+            allowed_db = db_manager.get_user_allowed_devices(user)
+            allowed_dns = set(_normalize_dn(d['mac_address']) for d in allowed_db if d.get('mac_address'))
+            
+            filtered_items = []
+            for item in items:
+                # Results have 'dn' or 'target_dn'
+                item_dn = item.get('dn') or item.get('target_dn')
+                if not item_dn or _normalize_dn(item_dn) in allowed_dns:
+                    filtered_items.append(item)
+            items = filtered_items
+            
     except Exception as exc:  # pragma: no cover
         return jsonify({"error": "results_failed", "detail": str(exc)}), 500
     return jsonify({"items": items})
 
 
-@config_app.route("/api/config/control", methods=["POST"])
+@app.route("/api/config/control", methods=["POST"])
+@login_required
 def config_control() -> Response:
     svc = _require_config_service()
     data = request.get_json(silent=True) or {}
     dn = (data.get("dn") or data.get("target_dn") or data.get("device_dn") or data.get("mac") or "").strip()
     if not dn:
         return jsonify({"error": "dn_required"}), 400
+        
+    if not _check_device_permission(dn):
+        abort(403, description="Access denied for this device.")
+        
     payload_obj = data.get("payload")
     if not isinstance(payload_obj, dict):
         return jsonify({"error": "payload_required"}), 400
@@ -658,13 +732,18 @@ def config_control() -> Response:
     return jsonify({"status": "queued", **result})
 
 
-@config_app.route("/api/config/apply", methods=["POST"])
+@app.route("/api/config/apply", methods=["POST"])
+@login_required
 def config_apply() -> Response:
     svc = _require_config_service()
     data = request.get_json(silent=True) or {}
     dn = (data.get("dn") or data.get("target_dn") or "").strip()
     if not dn:
         return jsonify({"error": "dn_required"}), 400
+        
+    if not _check_device_permission(dn):
+        abort(403, description="Access denied for this device.")
+
     payload_section = data.get("payload") if isinstance(data.get("payload"), dict) else {}
     try:
         analog = _parse_pins(data.get("analog") if data.get("analog") is not None else payload_section.get("analog"))
@@ -691,11 +770,35 @@ def config_apply() -> Response:
     return jsonify({"status": "queued", **result})
 
 
-@config_app.route("/api/config/direct", methods=["POST"])
+@app.route("/api/config/direct", methods=["POST"])
+@login_required
 def config_apply_direct() -> Response:
     data = request.get_json(silent=True) or {}
     dn_raw = data.get("dn") or data.get("target_dn") or data.get("device_dn") or data.get("mac")
     dn = _normalize_dn(dn_raw or "")
+    
+    # Direct mode usually involves discovery or direct IP connection.
+    # If a DN is provided, check permission.
+    if dn and not _check_device_permission(dn):
+         abort(403, description="Access denied for this device.")
+    
+    # Note: Direct mode can theoretically talk to any IP. 
+    # If the user is not admin, we should probably restrict this feature or 
+    # ensure the resolved IP belongs to an allowed device.
+    # However, 'direct' is often used for initial setup of devices not yet in DB?
+    # Requirement: "In calling MQTT publish / control ... must check permission."
+    # Direct mode uses `send_device_payload` (TCP), not MQTT.
+    # But for safety, if not admin, maybe restrict? 
+    # Let's enforce DN check if DN is present. If only IP is present, it's risky.
+    # User requirement: "ensure all migrated routes have login_required" and "check device permission".
+    # If user is not admin, they shouldn't be poking random IPs.
+    if session.get('sso_id') != 'admin':
+         # If not admin, we MUST match against a known allowed device
+         if not dn:
+             # Try to resolve IP to a DN from discovery? Hard.
+             # Easiest: Only allow 'direct' if DN is provided and valid.
+             abort(403, description="Non-admins must provide valid Device Code/MAC for direct control.")
+    
     target_ip = (data.get("target_ip") or data.get("ip") or "").strip()
     try:
         port = int(data.get("port") or CONFIG_DEVICE_TCP_PORT)
@@ -760,6 +863,7 @@ def config_apply_direct() -> Response:
 
 
 @app.route("/api/license/apply", methods=["POST"])
+@login_required
 def config_license_apply() -> Response:
     cfg_svc = _require_config_service()
     lic_svc = _require_license_service()
@@ -768,6 +872,10 @@ def config_license_apply() -> Response:
     device_code = (data.get("device_code") or data.get("mac") or dn).replace(":", "").strip()
     if not device_code:
         return jsonify({"error": "device_code_required"}), 400
+        
+    if not _check_device_permission(dn or device_code):
+        abort(403, description="Access denied for this device.")
+
     try:
         days_val = int(data.get("days") or data.get("duration_days") or data.get("duration") or LICENSE_DEFAULT_DAYS)
     except Exception:
@@ -810,11 +918,21 @@ def config_license_apply() -> Response:
     return jsonify(result)
 
 
-@config_app.route("/api/license/query")
+@app.route("/api/license/query")
+@login_required
 def config_license_query() -> Response:
     cfg_svc = _require_config_service()
     dn = (request.args.get("dn") or request.args.get("target_dn") or request.args.get("device_dn") or "").strip().upper()
+    
+    if dn and not _check_device_permission(dn):
+         abort(403, description="Access denied for this device.")
+         
     target_ip = (request.args.get("target_ip") or request.args.get("ip") or "").strip()
+    
+    # If no DN provided, admin might be querying by IP.
+    if not dn and session.get('sso_id') != 'admin':
+        abort(403, description="Access denied. DN required.")
+        
     port_raw = request.args.get("port")
     try:
         port_val = int(port_raw) if port_raw else LICENSE_TCP_PORT
@@ -844,21 +962,7 @@ def config_license_query() -> Response:
     return jsonify(result)
 
 
-def _run_config_console():
-    # Use gevent WSGI for config console too
-    print(f"[config-console] serving on port {CONFIG_CONSOLE_PORT}")
-    server = WSGIServer(("0.0.0.0", CONFIG_CONSOLE_PORT), config_app)
-    server.serve_forever()
-
-
 if __name__ == "__main__":
-    # Run in threaded mode locally so SSE streaming is not blocked.
-    # 本地启动时启用多线程，防止单线程阻塞 SSE。
-    if CONFIG_CONSOLE_ENABLED:
-        # Use gevent spawn instead of threading.Thread
-        import gevent
-        gevent.spawn(_run_config_console)
-
     web_port = int(os.getenv("WEB_PORT", "5000"))
     ssl_enabled = os.getenv("WEB_SSL_ENABLED", "0") not in ("0", "", "false", "False", "FALSE")
     ssl_cert = os.getenv("WEB_SSL_CERT")

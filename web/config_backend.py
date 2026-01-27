@@ -346,6 +346,7 @@ def build_config_service_from_env() -> ConfigService:
         username=username,
         password=password,
         device_ttl=ttl,
+        max_results=200,
     )
 
 

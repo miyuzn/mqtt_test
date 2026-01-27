@@ -109,7 +109,7 @@ CONFIG_RESULT_TOPIC     = get_conf("CONFIG", "RESULT_TOPIC", "etx/v1/config/resu
 CONFIG_AGENT_TOPIC      = get_conf("CONFIG", "AGENT_TOPIC", "etx/v1/config/agents")
 CONFIG_AGENT_ID         = get_conf("CONFIG", "AGENT_ID", f"agent-{_short_mac()}")
 DEVICE_TCP_PORT         = get_conf("CONFIG", "DEVICE_TCP_PORT", 22345, int)
-DEVICE_TCP_TIMEOUT      = get_conf("CONFIG", "DEVICE_TCP_TIMEOUT", 3.0, float)
+DEVICE_TCP_TIMEOUT      = get_conf("CONFIG", "DEVICE_TCP_TIMEOUT", 10.0, float)
 REGISTRY_TTL            = get_conf("CONFIG", "REGISTRY_TTL", 300, int)
 REGISTRY_PUBLISH_SEC    = get_conf("CONFIG", "REGISTRY_PUBLISH_SEC", 5, int)
 DISCOVER_PORT           = get_conf("CONFIG", "DISCOVER_PORT", 22346, int)
@@ -616,11 +616,12 @@ def build_config_payload(analog, select, model):
     return payload_obj, payload_str
 
 
-def _send_tcp_json(ip: str, payload_str: str, port: int) -> dict:
+def _send_tcp_json(ip: str, payload_str: str, port: int, timeout: float = None) -> dict:
     addr = (ip, port)
-    with socket.create_connection(addr, timeout=DEVICE_TCP_TIMEOUT) as sock:
+    timeout_val = timeout if timeout is not None else DEVICE_TCP_TIMEOUT
+    with socket.create_connection(addr, timeout=timeout_val) as sock:
         sock.sendall(payload_str.encode("utf-8"))
-        sock.settimeout(DEVICE_TCP_TIMEOUT)
+        sock.settimeout(timeout_val)
         chunks = []
         while True:
             try:
@@ -641,13 +642,13 @@ def _send_tcp_json(ip: str, payload_str: str, port: int) -> dict:
         return {"raw": raw_reply}
 
 
-def send_config_payload(ip: str, payload_str: str, port: Optional[int] = None) -> dict:
-    return _send_tcp_json(ip, payload_str, port or DEVICE_TCP_PORT)
+def send_config_payload(ip: str, payload_str: str, port: Optional[int] = None, timeout: float = None) -> dict:
+    return _send_tcp_json(ip, payload_str, port or DEVICE_TCP_PORT, timeout=timeout)
 
 
-def send_license_payload(ip: str, token: str, port: Optional[int] = None) -> dict:
+def send_license_payload(ip: str, token: str, port: Optional[int] = None, timeout: float = None) -> dict:
     payload_str = json.dumps({"license": token}, ensure_ascii=False) + "\n"
-    return _send_tcp_json(ip, payload_str, port or DEVICE_TCP_PORT)
+    return _send_tcp_json(ip, payload_str, port or DEVICE_TCP_PORT, timeout=timeout)
 
 
 def publish_device_registry(client: mqtt.Client) -> None:
@@ -756,6 +757,15 @@ def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
     discoveries: list[dict] = []
     broadcast_targets: list[str] = []
 
+    # Extract timeout from payload if present (e.g. for calibration)
+    # 优先使用 payload 中的 timeout，其次 cmd 顶层 timeout
+    custom_timeout = payload_section.get("timeout") or cmd.get("timeout")
+    if custom_timeout is not None:
+        try:
+            custom_timeout = float(custom_timeout)
+        except (ValueError, TypeError):
+            custom_timeout = None
+
     # Only resolve IP if it's NOT a discovery command (avoid blocking broadcast)
     if cmd_type not in ("discover", "discover_only", "discover_devices"):
         if not target_ip:
@@ -775,7 +785,7 @@ def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
                 port = int(port)
             except Exception:
                 port = None
-        reply = send_config_payload(target_ip, payload_str, port=port)
+        reply = send_config_payload(target_ip, payload_str, port=port, timeout=custom_timeout)
         return {
             "command_id": command_id,
             "dn": dn_hex,
@@ -847,7 +857,7 @@ def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
             raise ConfigCommandError("license token is required")
         if not target_ip:
             raise ConfigCommandError("Target DN currently is not associated with any IP (discovery failed)")
-        reply = send_license_payload(target_ip, token, port=port)
+        reply = send_license_payload(target_ip, token, port=port, timeout=custom_timeout)
         return {
             "command_id": command_id,
             "dn": dn_hex,
@@ -871,7 +881,7 @@ def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
             port = pick_port_from_discovery(target_ip, discoveries, DEVICE_TCP_PORT)
         if not target_ip:
             raise ConfigCommandError("Target DN currently is not associated with any IP (discovery failed)")
-        reply = send_license_payload(target_ip, "?", port=port)
+        reply = send_license_payload(target_ip, "?", port=port, timeout=custom_timeout)
         return {
             "command_id": command_id,
             "dn": dn_hex,
@@ -896,7 +906,7 @@ def execute_command(cmd: dict, client: mqtt.Client | None = None) -> dict:
         target_ip, discoveries, broadcast_targets = resolve_ip_with_discovery(dn_hex, target_ip)
     if not target_ip:
         raise ConfigCommandError("Target DN currently is not associated with any IP (discovery failed)")
-    reply = send_config_payload(target_ip, payload_str)
+    reply = send_config_payload(target_ip, payload_str, timeout=custom_timeout)
     return {
         "command_id": command_id,
         "dn": dn_hex,

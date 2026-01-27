@@ -104,5 +104,4 @@ services:
     ports:
       - "443:5000"              # HTTPS (public)
       - "127.0.0.1:8443:5000"   # Loopback HTTPS (debug)
-      - "5002:5002"             # Config console (LAN)
     restart: unless-stopped
