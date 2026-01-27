@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # Add Local Database
+  db:
+    image: postgres:alpine
+    container_name: mqtt-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: iot_data
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data_local:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Override Broker to expose plain port for local dev
+  broker:
+    ports:
+      - "1883:1883"
+      - "8883:8883"
+
+  # Override Backend (Bridge + Parser)
+  backend:
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=1883
+      - RAW_BROKER_HOST=broker
+      - RAW_BROKER_PORT=1883
+      - PARSED_BROKER_HOST=broker
+      - PARSED_BROKER_PORT=1883
+      - PARSED_TRANSPORT=tcp
+      - CLIENT_ID=mqtt-bridge
+      # Local DB
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=iot_data
+      - DB_USER=admin
+      - DB_PASS=devpassword
+    depends_on:
+      - db
+
+  # Override Sink
+  sink:
+    environment:
+      - MQTT_BROKER_HOST=broker
+      - MQTT_BROKER_PORT=1883
+      - MQTT_USE_SSL=false
+      - MQTT_SUB_TOPIC=etx/v1/parsed/#
+      # Local DB
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=iot_data
+      - DB_USER=admin
+      - DB_PASS=devpassword
+    depends_on:
+      - db
+
+  # Override Web
+  web:
+    environment:
+      # Keep Python Client on Plain Text (Internal)
+      - BROKER_HOST=broker
+      - MQTT_BROKER_PORT=1883
+      # WEB_SSL_ENABLED=1 inherited from base (Enable HTTPS)
+      
+      # Local DB
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=iot_data
+      - DB_USER=admin
+      - DB_PASS=devpassword
+    depends_on:
+      - db
+
+volumes:
+  db_data_local:
